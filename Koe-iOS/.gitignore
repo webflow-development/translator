@@ -1,0 +1,8 @@
+.DS_Store
+*.xcuserstate
+DerivedData/
+build/
+*.ipa
+*.mobileprovision
+*.p12
+Secrets.plist
