@@ -4,7 +4,7 @@ workflows:
     max_build_duration: 90
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Koe App Store Connect
+      app_store_connect: webflow
     environment:
       xcode: 27.1
       ios_signing:
