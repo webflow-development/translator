@@ -41,6 +41,7 @@ public sealed class MainPage : ContentPage
     readonly Label hint = new() { FontSize = 12, TextColor = Muted };
     readonly ActivityIndicator progress = new() { Color = Colors.White, WidthRequest = 42, HeightRequest = 42, IsVisible = false, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, InputTransparent = true, ZIndex = 1 };
     readonly Border signInCard;
+    readonly Border shutterRing;
     CancellationTokenSource? operation;
     bool busy, pageVisible, syncingDraft, pausingForEdit;
     bool fromGerman = true;
@@ -78,7 +79,7 @@ public sealed class MainPage : ContentPage
         var input = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
         input.Add(draft, 0, 0); input.Add(send, 1, 0);
         var inputBorder = new Border { BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DCE8F0"), StrokeShape = new RoundRectangle { CornerRadius = 24 }, Padding = new Thickness(12, 4, 5, 4), Content = input };
-        var shutterRing = new Border { WidthRequest = 94, HeightRequest = 94, Padding = 6, StrokeThickness = 2, Stroke = Blue, StrokeShape = new Ellipse(), HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = shutter };
+        shutterRing = new Border { WidthRequest = 94, HeightRequest = 94, Padding = 6, StrokeThickness = 2, Stroke = Blue, StrokeShape = new Ellipse(), HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = shutter };
         prompt.HorizontalTextAlignment = TextAlignment.Center;
         hint.HorizontalTextAlignment = TextAlignment.Center;
         var turnCaption = new VerticalStackLayout { Spacing = 4, Children = { prompt, hint } };
@@ -338,9 +339,12 @@ public sealed class MainPage : ContentPage
         draft.IsReadOnly = busy && !pausingForEdit;
         send.IsEnabled = !busy && !recording.IsRecording && auth.IsConnected && !string.IsNullOrWhiteSpace(draft.Text);
         shutter.IsEnabled = !busy && auth.IsConnected;
-        shutter.Text = busy ? "" : recording.IsRecording ? "■" : recording.HasTurn ? "↑" : "●";
-        shutter.BackgroundColor = recording.IsRecording ? Color.FromArgb("#367BAB") : Blue;
-        shutter.Opacity = busy ? 0.65 : 1;
+        shutter.Text = busy ? "" : recording.HasTurn ? "↑" : "●";
+        var buttonColor = busy ? Color.FromArgb("#7E96AB") : recording.IsRecording ? Color.FromArgb("#32806A") : recording.HasTurn ? Color.FromArgb("#E8BD70") : Blue;
+        shutter.BackgroundColor = buttonColor;
+        shutterRing.Stroke = buttonColor;
+        shutter.TextColor = !busy && recording.State == RecordingState.Paused ? Ink : Colors.White;
+        shutter.Opacity = 1;
         SemanticProperties.SetDescription(shutter, recording.HasTurn ? "Satz übersetzen und zur anderen Sprache wechseln" : "Aufnahme starten");
         prompt.Text = busy ? "Einen Moment …" : recording.IsRecording ? (fromGerman ? "Deutsch · sprich jetzt" : "日本語 · sprich jetzt") : recording.HasTurn ? "Aufnahme pausiert" : (fromGerman ? "Deutsch · bereit" : "日本語 · bereit");
         hint.Text = busy ? "Dein Satz wird verarbeitet." : recording.IsRecording ? "Nochmals tippen: übersetzen" : recording.HasTurn ? "Text bearbeiten · links fortsetzen · Mitte übersetzen" : "Tippen, um die Aufnahme zu starten";
