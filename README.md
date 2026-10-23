@@ -11,7 +11,7 @@ Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.
 
 ## Funktionen
 
-Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat. Der große runde Gesprächsknopf unten links startet die Aufnahme. Jeder weitere Druck beendet den Satz, übersetzt ihn, wechselt die Sprache und startet das Mikrofon für die andere Person. Pause übersetzt den aktuellen Satz, ohne die nächste Aufnahme zu starten. Es gibt keine Sprachausgabe. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
+Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat. Der große runde Gesprächsknopf unten mittig startet die Aufnahme. Jeder weitere Druck beendet den Satz, übersetzt ihn, wechselt die Sprache und startet das Mikrofon für die andere Person. Pause übersetzt den aktuellen Satz, ohne die nächste Aufnahme zu starten. Es gibt keine Sprachausgabe. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
 
 Die ChatGPT-Anmeldung verwendet den dokumentierten Open-Source-SIWC-Flow mit PKCE, State, Nonce, Loopback-Callback und RS256-ID-Token-Verifikation. Tokens liegen in MAUI SecureStorage (auf iOS im Schlüsselbund). Es wird kein API-Schlüssel eingebaut. Übersetzungen verwenden ein vom Konto angebotenes Modell und die öffentliche Responses API mit `store=false` und `stream=true`. Es werden nur erkannte Texte an OpenAI geschickt. Apples Spracherkennung kann je nach Gerät und Sprache Apples Server nutzen.
 
