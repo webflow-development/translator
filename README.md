@@ -15,6 +15,10 @@ Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat
 
 Die ChatGPT-Anmeldung verwendet den dokumentierten Open-Source-SIWC-Flow mit PKCE, State, Nonce, Loopback-Callback und RS256-ID-Token-Verifikation. Tokens liegen in MAUI SecureStorage (auf iOS im Schlüsselbund). Es wird kein API-Schlüssel eingebaut. Übersetzungen verwenden ein vom Konto angebotenes Modell und die öffentliche Responses API mit `store=false` und `stream=true`. Es werden nur erkannte Texte an OpenAI geschickt. Apples Spracherkennung kann je nach Gerät und Sprache Apples Server nutzen.
 
+## Nachrichten und Darstellung
+
+Neue Nachrichten werden automatisch ins Bild gescrollt. Unter japanischen Originalen oder Übersetzungen steht die passende Hepburn-Romaji-Lesung. Die Kopiersymbole neben Original und Übersetzung kopieren jeweils nur diesen Text, ohne Romaji oder Sprachbezeichnung. Unter **••• → Einstellungen** ist die Textgröße **Klein / Mittel / Groß** wählbar; die Einstellung wirkt sofort und bleibt auf dem Gerät gespeichert.
+
 ## Unter Windows entwickeln
 
 1. .NET SDK **10.0.402** und Visual Studio mit .NET MAUI oder VS Code mit C#/.NET-MAUI-Erweiterungen installieren.

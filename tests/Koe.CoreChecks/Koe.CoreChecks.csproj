@@ -3,5 +3,6 @@
   <ItemGroup>
     <Compile Include="../../Koe-Maui/Services/ResponseStream.cs" Link="ResponseStream.cs" />
     <Compile Include="../../Koe-Maui/Services/IdTokenValidator.cs" Link="IdTokenValidator.cs" />
+    <Compile Include="../../Koe-Maui/Services/TranslationResult.cs" Link="TranslationResult.cs" />
   </ItemGroup>
 </Project>

@@ -5,10 +5,13 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Koe;
 
-public sealed record ConversationTurn(string Source, string Target, string Original, string Translation)
+public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string Romaji)
 {
     public string Direction => $"{Source}  →  {Target}";
     public bool FromGerman => Source == "Deutsch";
+    public string RomajiCaption => "Rōmaji · " + Romaji;
+    public bool TranslationHasRomaji => FromGerman && !string.IsNullOrWhiteSpace(Romaji);
+    public bool OriginalHasRomaji => !FromGerman && !string.IsNullOrWhiteSpace(Romaji);
 }
 
 public sealed class MainPage : ContentPage
@@ -18,6 +21,12 @@ public sealed class MainPage : ContentPage
     readonly OpenAiTranslator translator;
     readonly ISpeechCapture speech;
     readonly ObservableCollection<ConversationTurn> turns = [];
+    readonly CollectionView messages;
+    int scrollRevision;
+    string textSize = Preferences.Default.Get("koe.text-size", "Mittel");
+    public double MessageFontSize => textSize == "Klein" ? 16 : textSize == "Groß" ? 23 : 18;
+    public double OriginalFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 19 : 14;
+    public double RomajiFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
     readonly Editor draft = new() { Placeholder = "Nachricht eingeben …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     readonly Button send = new() { Text = "↑", FontSize = 25, WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.End };
@@ -50,9 +59,10 @@ public sealed class MainPage : ContentPage
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
             Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "Zwei Sprachen. Ein Gespräch.", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, new Label { Text = "Verbinde ChatGPT, um eure Nachrichten zu übersetzen.", TextColor = Muted, FontSize = 13 }, connect } }
         };
-        var messages = new CollectionView
+        messages = new CollectionView
         {
             Margin = new Thickness(14, 0), ItemsSource = turns, SelectionMode = SelectionMode.None,
+            ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepLastItemInView,
             EmptyView = new VerticalStackLayout { Padding = new Thickness(30, 42), Spacing = 12, Children =
             {
                 new Label { Text = "Hallo.  こんにちは。", FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Blue, HorizontalTextAlignment = TextAlignment.Center },
@@ -90,25 +100,52 @@ public sealed class MainPage : ContentPage
         draft.TextChanged += (_, _) => UpdateControls();
         speech.TranscriptChanged += text => MainThread.BeginInvokeOnMainThread(() => { if (pageVisible && turnActive) draft.Text = text; });
         speech.Stopped += error => MainThread.BeginInvokeOnMainThread(() => { if (error is not null && !busy && turnActive) SetStatus(error); UpdateControls(); });
-        turns.CollectionChanged += (_, _) => { if (turns.Count > 0) messages.ScrollTo(turns[^1], position: ScrollToPosition.End); };
+        turns.CollectionChanged += (_, _) => ScrollToLatest();
+        messages.SizeChanged += (_, _) => ScrollToLatest();
+        messages.Loaded += (_, _) => ScrollToLatest();
+        draft.FontSize = OriginalFontSize + 2;
         UpdateControls();
     }
 
     static Button LanguageButton(string text) => new() { Text = text, FontSize = 14, CornerRadius = 16, HeightRequest = 36, Padding = new Thickness(12, 0), TextColor = Muted, BackgroundColor = Colors.Transparent };
 
-    static View CreateBubble()
+    View CreateBubble()
     {
         var direction = new Label { FontSize = 11, TextColor = Muted };
         direction.SetBinding(Label.TextProperty, nameof(ConversationTurn.Direction));
         var original = new Label { FontSize = 14, TextColor = Muted, LineHeight = 1.15 };
         original.SetBinding(Label.TextProperty, nameof(ConversationTurn.Original));
+        original.SetBinding(Label.FontSizeProperty, new Binding(nameof(OriginalFontSize), source: this));
         var translation = new Label { FontSize = 18, TextColor = Ink, LineHeight = 1.15 };
         translation.SetBinding(Label.TextProperty, nameof(ConversationTurn.Translation));
+        translation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
+        var translatedRomaji = new Label { TextColor = Blue, LineHeight = 1.15 };
+        translatedRomaji.SetBinding(Label.TextProperty, nameof(ConversationTurn.RomajiCaption));
+        translatedRomaji.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.TranslationHasRomaji));
+        translatedRomaji.SetBinding(Label.FontSizeProperty, new Binding(nameof(RomajiFontSize), source: this));
+        var originalRomaji = new Label { TextColor = Blue, LineHeight = 1.15 };
+        originalRomaji.SetBinding(Label.TextProperty, nameof(ConversationTurn.RomajiCaption));
+        originalRomaji.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.OriginalHasRomaji));
+        originalRomaji.SetBinding(Label.FontSizeProperty, new Binding(nameof(RomajiFontSize), source: this));
+        var copyTranslation = CopyButton("Übersetzung kopieren");
+        copyTranslation.Clicked += async (_, _) =>
+        {
+            if (copyTranslation.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Translation);
+        };
+        var copyOriginal = CopyButton("Originaltext kopieren");
+        copyOriginal.Clicked += async (_, _) =>
+        {
+            if (copyOriginal.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Original);
+        };
+        var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        translatedRow.Add(translation, 0, 0); translatedRow.Add(copyTranslation, 1, 0);
+        var originalRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        originalRow.Add(original, 0, 0); originalRow.Add(copyOriginal, 1, 0);
         var bubble = new Border
         {
             Margin = new Thickness(4, 6, 34, 6), Padding = new Thickness(14, 11), StrokeThickness = 0, BackgroundColor = Colors.White,
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(17, 17, 4, 17) }, HorizontalOptions = LayoutOptions.Start, MaximumWidthRequest = 330,
-            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, translation, original } }
+            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, translatedRow, translatedRomaji, originalRow, originalRomaji } }
         };
         bubble.BindingContextChanged += (_, _) =>
         {
@@ -118,7 +155,36 @@ public sealed class MainPage : ContentPage
             bubble.BackgroundColor = turn.FromGerman ? Color.FromArgb("#D3E8F8") : Colors.White;
             bubble.StrokeShape = new RoundRectangle { CornerRadius = turn.FromGerman ? new CornerRadius(17, 17, 17, 4) : new CornerRadius(17, 17, 4, 17) };
         };
+        bubble.SizeChanged += (_, _) =>
+        {
+            if (turns.Count > 0 && ReferenceEquals(bubble.BindingContext, turns[^1])) ScrollToLatest();
+        };
         return new Grid { Children = { bubble } };
+    }
+
+    static ImageButton CopyButton(string description)
+    {
+        var button = new ImageButton { Source = "copy.png", BackgroundColor = Colors.Transparent, WidthRequest = 40, HeightRequest = 40, Padding = 10, VerticalOptions = LayoutOptions.Start };
+        SemanticProperties.SetDescription(button, description);
+        return button;
+    }
+
+    async Task CopyTextAsync(string text)
+    {
+        try { await Clipboard.Default.SetTextAsync(text); SetStatus("Text kopiert."); }
+        catch { SetStatus("Der Text konnte nicht kopiert werden. Bitte erneut versuchen."); }
+    }
+
+    void ScrollToLatest()
+    {
+        var revision = ++scrollRevision;
+        if (turns.Count == 0) return;
+        // Collection changes arrive before iOS has measured the new cell. Scroll after layout.
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(120), () =>
+        {
+            if (revision != scrollRevision || !pageVisible || turns.Count == 0 || messages.Handler is null) return;
+            messages.ScrollTo(turns.Count - 1, position: ScrollToPosition.End, animate: false);
+        });
     }
 
     protected override async void OnAppearing()
@@ -138,13 +204,27 @@ public sealed class MainPage : ContentPage
     async Task ShowMenuAsync()
     {
         if (busy || turnActive) return;
-        var selection = await DisplayActionSheetAsync(auth.IsConnected ? $"ChatGPT · {auth.AccountLabel}" : "Gespräch", "Schließen", null, "Verlauf löschen", "Nutzung verwalten", auth.IsConnected ? "Abmelden" : "Mit ChatGPT verbinden");
+        var selection = await DisplayActionSheetAsync(auth.IsConnected ? $"ChatGPT · {auth.AccountLabel}" : "Gespräch", "Schließen", null, "Einstellungen", "Verlauf löschen", "Nutzung verwalten", auth.IsConnected ? "Abmelden" : "Mit ChatGPT verbinden");
         switch (selection)
         {
             case "Verlauf löschen": turns.Clear(); break;
+            case "Einstellungen": await ShowSettingsAsync(); break;
             case "Nutzung verwalten": await Browser.Default.OpenAsync("https://chatgpt.com/settings/usage"); break;
             case "Abmelden": case "Mit ChatGPT verbinden": await ConnectAsync(); break;
         }
+    }
+
+    async Task ShowSettingsAsync()
+    {
+        var selection = await DisplayActionSheetAsync($"Textgröße · {textSize}", "Abbrechen", null, "Klein", "Mittel", "Groß");
+        if (selection is not ("Klein" or "Mittel" or "Groß")) return;
+        textSize = selection;
+        Preferences.Default.Set("koe.text-size", selection);
+        OnPropertyChanged(nameof(MessageFontSize));
+        OnPropertyChanged(nameof(OriginalFontSize));
+        OnPropertyChanged(nameof(RomajiFontSize));
+        draft.FontSize = OriginalFontSize + 2;
+        ScrollToLatest();
     }
 
     async Task ConnectAsync()
@@ -210,11 +290,11 @@ public sealed class MainPage : ContentPage
         var direction = fromGerman;
         var translated = await translator.TranslateAsync(text, direction, ct);
         ct.ThrowIfCancellationRequested();
-        turns.Add(new(direction ? "Deutsch" : "日本語", direction ? "日本語" : "Deutsch", text, translated));
+        turns.Add(new(direction ? "Deutsch" : "日本語", direction ? "日本語" : "Deutsch", text, translated.Translation, translated.Romaji));
         draft.Text = ""; fromGerman = !direction; SetStatus(null);
     }
 
-    void FinishOperation() { operation?.Dispose(); operation = null; busy = false; UpdateControls(); }
+    void FinishOperation() { operation?.Dispose(); operation = null; busy = false; UpdateControls(); ScrollToLatest(); }
     void SetStatus(string? text) { status.Text = text; status.IsVisible = !string.IsNullOrWhiteSpace(text); }
 
     void UpdateControls()

@@ -54,6 +54,27 @@ await Check("OIDC rejects modified signature", () => Reject(async () =>
     var signature = IdTokenValidator.Decode(pieces[2]); signature[0] ^= 1;
     await IdTokenValidator.ValidateAsync(http, pieces[0] + "." + pieces[1] + "." + B64(signature), "koe-client", "nonce", default);
 }));
+await Check("Translation preserves Japanese, romaji and escaped newlines separately", () =>
+{
+    var result = TranslationResult.Parse("{\"translation\":\"こんにちは。\\nお元気ですか？\",\"romaji\":\"Konnichiwa. Ogenki desu ka?\"}");
+    if (result.Translation != "こんにちは。\nお元気ですか？" || result.Romaji != "Konnichiwa. Ogenki desu ka?") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Japanese input can return German translation with original romaji", () =>
+{
+    var result = TranslationResult.Parse("{\"translation\":\"Danke.\",\"romaji\":\"Arigatō.\"}");
+    if (result.Translation != "Danke." || result.Romaji != "Arigatō.") throw new Exception();
+    return Task.CompletedTask;
+});
+foreach (var invalid in new[] { "not JSON", "{\"translation\":\"こんにちは\"}", "{\"translation\":\"\",\"romaji\":\"konnichiwa\"}", "{\"translation\":\"こんにちは\",\"romaji\":42}", "[]" })
+    await Check("Malformed or incomplete translation is rejected", () => Reject(() => { TranslationResult.Parse(invalid); return Task.CompletedTask; }));
+await Check("Translation JSON can be reconstructed from split streaming deltas", async () =>
+{
+    var fragments = new[] { "{\"translation\":\"こん", "にちは\",\"romaji\":\"Konnichiwa\"}" };
+    var events = string.Concat(fragments.Select(delta => "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta }) + "\n\n"));
+    events += "data: {\"type\":\"response.completed\"}\n\n";
+    if (TranslationResult.Parse(await Read(events)).Translation != "こんにちは") throw new Exception();
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler
