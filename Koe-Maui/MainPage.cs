@@ -22,10 +22,10 @@ public sealed class MainPage : ContentPage
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     readonly Button send = new() { Text = "↑", FontSize = 25, WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.End };
     readonly Button shutter = new() { Text = "●", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White };
-    readonly Button pause = new() { Text = "Pause", FontSize = 13, TextColor = Muted, BackgroundColor = Colors.Transparent, Padding = new Thickness(8, 4), IsVisible = false };
+    readonly Button endConversation = new() { Text = "■", FontSize = 19, TextColor = Colors.White, BackgroundColor = Color.FromArgb("#CE4949"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0 };
     readonly Button cancel = new() { Text = "Abbrechen", FontSize = 13, BackgroundColor = Colors.Transparent, TextColor = Muted, IsVisible = false, Padding = new Thickness(6, 4) };
     readonly Button german = LanguageButton("Deutsch"), japanese = LanguageButton("日本語");
-    readonly Label status = new() { FontSize = 12, TextColor = Muted, IsVisible = false };
+    readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted };
     readonly Label prompt = new() { FontSize = 17, FontAttributes = FontAttributes.Bold, TextColor = Ink };
     readonly Label hint = new() { FontSize = 12, TextColor = Muted };
@@ -39,19 +39,12 @@ public sealed class MainPage : ContentPage
     {
         this.auth = auth; this.translator = translator; this.speech = speech;
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
-        var avatar = new Border
-        {
-            WidthRequest = 44, HeightRequest = 44, BackgroundColor = Color.FromArgb("#CFE5F5"), StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 22 },
-            Content = new Label { Text = "K", TextColor = Blue, FontSize = 25, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center }
-        };
         var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 48, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Gesprächsoptionen");
         menu.Clicked += async (_, _) => await ShowMenuAsync();
-        var header = new Grid { Padding = new Thickness(18, 12), ColumnSpacing = 12, BackgroundColor = Colors.White, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        header.Add(avatar, 0, 0);
-        header.Add(new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink }, account } }, 1, 0);
-        header.Add(menu, 2, 0);
+        var header = new Grid { Padding = new Thickness(18, 12), ColumnSpacing = 12, BackgroundColor = Colors.White, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        header.Add(new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink }, account } }, 0, 0);
+        header.Add(menu, 1, 0);
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
@@ -80,15 +73,16 @@ public sealed class MainPage : ContentPage
         var turnCaption = new VerticalStackLayout { Spacing = 4, Children = { prompt, hint } };
         var turnControls = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         turnControls.Add(shutterRing, 1, 0);
-        turnControls.Add(new VerticalStackLayout { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Spacing = 2, Children = { progress, pause, cancel } }, 2, 0);
+        turnControls.Add(new VerticalStackLayout { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Spacing = 2, Children = { progress, endConversation, cancel } }, 2, 0);
         var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, inputBorder, turnCaption, turnControls, status } };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
         root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(composer, 0, 3);
         Content = root;
+        SemanticProperties.SetDescription(endConversation, "Gespräch beenden");
         SemanticProperties.SetDescription(send, "Geschriebenen Text übersetzen");
         connect.Clicked += async (_, _) => await ConnectAsync();
         shutter.Clicked += async (_, _) => await AdvanceConversationAsync(true);
-        pause.Clicked += async (_, _) => await AdvanceConversationAsync(false);
+        endConversation.Clicked += async (_, _) => await AdvanceConversationAsync(false);
         send.Clicked += async (_, _) => await SendTextAsync();
         cancel.Clicked += (_, _) => operation?.Cancel();
         german.Clicked += (_, _) => { if (!busy && !turnActive) { fromGerman = true; UpdateControls(); } };
@@ -180,8 +174,9 @@ public sealed class MainPage : ContentPage
                 turnActive = false;
                 if (!string.IsNullOrWhiteSpace(finalText)) draft.Text = finalText;
                 var text = draft.Text?.Trim();
-                if (string.IsNullOrWhiteSpace(text)) { SetStatus("Kein Text erkannt. Tippe zum erneuten Sprechen."); return; }
+                if (string.IsNullOrWhiteSpace(text)) { SetStatus(continueListening ? "Kein Text erkannt. Tippe zum erneuten Sprechen." : "Gespräch beendet."); return; }
                 await TranslateDraftAsync(text, operation.Token);
+                if (!continueListening) SetStatus("Gespräch beendet.");
             }
             else if (!string.IsNullOrWhiteSpace(draft.Text)) await TranslateDraftAsync(draft.Text.Trim(), operation.Token);
             if (continueListening && pageVisible)
@@ -239,7 +234,7 @@ public sealed class MainPage : ContentPage
         japanese.BackgroundColor = fromGerman ? Colors.Transparent : Color.FromArgb("#CBE2F3");
         german.TextColor = fromGerman ? Ink : Muted; japanese.TextColor = fromGerman ? Muted : Ink;
         german.IsEnabled = japanese.IsEnabled = !busy && !turnActive;
-        pause.IsVisible = turnActive && !busy; cancel.IsVisible = busy;
+        endConversation.IsEnabled = turnActive && !busy; cancel.IsVisible = busy;
         progress.IsRunning = busy; progress.IsVisible = busy;
     }
 }
