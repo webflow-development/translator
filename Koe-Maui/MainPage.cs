@@ -19,7 +19,7 @@ public sealed class MainPage : ContentPage
     static readonly Color Ink = Color.FromArgb("#19384E"), Muted = Color.FromArgb("#638295"), Blue = Color.FromArgb("#568FBE");
     readonly ChatGptAuth auth;
     readonly OpenAiTranslator translator;
-    readonly ISpeechCapture speech;
+    readonly SpeechDraft recording;
     readonly ObservableCollection<ConversationTurn> turns = [];
     readonly CollectionView messages;
     int scrollRevision;
@@ -32,21 +32,22 @@ public sealed class MainPage : ContentPage
     readonly Button send = new() { Text = "↑", FontSize = 25, WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.End };
     readonly Button shutter = new() { Text = "●", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White };
     readonly Button endConversation = new() { Text = "■", FontSize = 19, TextColor = Colors.White, BackgroundColor = Color.FromArgb("#CE4949"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0 };
+    readonly Button pauseRecording = new() { Text = "Ⅱ", FontSize = 21, TextColor = Ink, BackgroundColor = Color.FromArgb("#CBE2F3"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
     readonly Button cancel = new() { Text = "Abbrechen", FontSize = 13, BackgroundColor = Colors.Transparent, TextColor = Muted, IsVisible = false, Padding = new Thickness(6, 4) };
     readonly Button german = LanguageButton("Deutsch"), japanese = LanguageButton("日本語");
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted };
     readonly Label prompt = new() { FontSize = 17, FontAttributes = FontAttributes.Bold, TextColor = Ink };
     readonly Label hint = new() { FontSize = 12, TextColor = Muted };
-    readonly ActivityIndicator progress = new() { Color = Blue, WidthRequest = 24, HeightRequest = 24, IsVisible = false };
+    readonly ActivityIndicator progress = new() { Color = Colors.White, WidthRequest = 42, HeightRequest = 42, IsVisible = false, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, InputTransparent = true, ZIndex = 1 };
     readonly Border signInCard;
     CancellationTokenSource? operation;
-    bool busy, turnActive, pageVisible;
+    bool busy, pageVisible, syncingDraft, pausingForEdit;
     bool fromGerman = true;
 
     public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech)
     {
-        this.auth = auth; this.translator = translator; this.speech = speech;
+        this.auth = auth; this.translator = translator; recording = new SpeechDraft(speech);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 48, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Gesprächsoptionen");
@@ -66,7 +67,7 @@ public sealed class MainPage : ContentPage
             EmptyView = new VerticalStackLayout { Padding = new Thickness(30, 42), Spacing = 12, Children =
             {
                 new Label { Text = "Hallo.  こんにちは。", FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Blue, HorizontalTextAlignment = TextAlignment.Center },
-                new Label { Text = "Tippe auf den großen Knopf und sprich.\nBeim nächsten Tippen ist die andere Person dran.", FontSize = 15, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, LineHeight = 1.2 }
+                new Label { Text = "Tippen: aufnehmen. Nochmals tippen: übersetzen.\nDie andere Person startet ihre Aufnahme selbst.", FontSize = 15, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, LineHeight = 1.2 }
             } },
             ItemTemplate = new DataTemplate(CreateBubble)
         };
@@ -82,8 +83,9 @@ public sealed class MainPage : ContentPage
         hint.HorizontalTextAlignment = TextAlignment.Center;
         var turnCaption = new VerticalStackLayout { Spacing = 4, Children = { prompt, hint } };
         var turnControls = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
-        turnControls.Add(shutterRing, 1, 0);
-        turnControls.Add(new VerticalStackLayout { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Spacing = 2, Children = { progress, endConversation, cancel } }, 2, 0);
+        turnControls.Add(pauseRecording, 0, 0);
+        turnControls.Add(new Grid { WidthRequest = 94, HeightRequest = 94, HorizontalOptions = LayoutOptions.Center, Children = { shutterRing, progress } }, 1, 0);
+        turnControls.Add(new VerticalStackLayout { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Spacing = 2, Children = { endConversation, cancel } }, 2, 0);
         var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, inputBorder, turnCaption, turnControls, status } };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
         root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(composer, 0, 3);
@@ -91,15 +93,23 @@ public sealed class MainPage : ContentPage
         SemanticProperties.SetDescription(endConversation, "Gespräch beenden");
         SemanticProperties.SetDescription(send, "Geschriebenen Text übersetzen");
         connect.Clicked += async (_, _) => await ConnectAsync();
-        shutter.Clicked += async (_, _) => await AdvanceConversationAsync(true);
-        endConversation.Clicked += async (_, _) => await AdvanceConversationAsync(false);
+        shutter.Clicked += async (_, _) => await AdvanceConversationAsync(false);
+        endConversation.Clicked += async (_, _) => await AdvanceConversationAsync(true);
+        pauseRecording.Clicked += async (_, _) => await TogglePauseAsync();
         send.Clicked += async (_, _) => await SendTextAsync();
         cancel.Clicked += (_, _) => operation?.Cancel();
-        german.Clicked += (_, _) => { if (!busy && !turnActive) { fromGerman = true; UpdateControls(); } };
-        japanese.Clicked += (_, _) => { if (!busy && !turnActive) { fromGerman = false; UpdateControls(); } };
-        draft.TextChanged += (_, _) => UpdateControls();
-        speech.TranscriptChanged += text => MainThread.BeginInvokeOnMainThread(() => { if (pageVisible && turnActive) draft.Text = text; });
-        speech.Stopped += error => MainThread.BeginInvokeOnMainThread(() => { if (error is not null && !busy && turnActive) SetStatus(error); UpdateControls(); });
+        german.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromGerman = true; UpdateControls(); } };
+        japanese.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromGerman = false; UpdateControls(); } };
+        draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
+        draft.Focused += async (_, _) =>
+        {
+            if (busy || !recording.IsRecording) return;
+            pausingForEdit = true;
+            try { await TogglePauseAsync(); }
+            finally { pausingForEdit = false; UpdateControls(); }
+        };
+        recording.Changed += () => MainThread.BeginInvokeOnMainThread(SyncDraft);
+        recording.Error += error => MainThread.BeginInvokeOnMainThread(() => { if (!busy) SetStatus(error); });
         turns.CollectionChanged += (_, _) => ScrollToLatest();
         messages.SizeChanged += (_, _) => ScrollToLatest();
         messages.Loaded += (_, _) => ScrollToLatest();
@@ -197,13 +207,13 @@ public sealed class MainPage : ContentPage
 
     protected override void OnDisappearing()
     {
-        pageVisible = false; operation?.Cancel(); turnActive = false; speech.Stop();
+        pageVisible = false; operation?.Cancel(); recording.Suspend();
         base.OnDisappearing();
     }
 
     async Task ShowMenuAsync()
     {
-        if (busy || turnActive) return;
+        if (busy || recording.HasTurn) return;
         var selection = await DisplayActionSheetAsync(auth.IsConnected ? $"ChatGPT · {auth.AccountLabel}" : "Gespräch", "Schließen", null, "Einstellungen", "Verlauf löschen", "Nutzung verwalten", auth.IsConnected ? "Abmelden" : "Mit ChatGPT verbinden");
         switch (selection)
         {
@@ -229,7 +239,7 @@ public sealed class MainPage : ContentPage
 
     async Task ConnectAsync()
     {
-        if (busy || turnActive) return;
+        if (busy || recording.HasTurn) return;
         busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
@@ -241,44 +251,68 @@ public sealed class MainPage : ContentPage
         finally { FinishOperation(); }
     }
 
-    async Task AdvanceConversationAsync(bool continueListening)
+    async Task AdvanceConversationAsync(bool endingConversation)
     {
         if (busy || !auth.IsConnected) return;
         draft.Unfocus();
         busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
-            if (turnActive)
+            if (recording.HasTurn || endingConversation)
             {
-                var finalText = await speech.FinishAsync(operation.Token);
-                turnActive = false;
-                if (!string.IsNullOrWhiteSpace(finalText)) draft.Text = finalText;
-                var text = draft.Text?.Trim();
-                if (string.IsNullOrWhiteSpace(text)) { SetStatus(continueListening ? "Kein Text erkannt. Tippe zum erneuten Sprechen." : "Gespräch beendet."); return; }
+                var text = (await recording.FinishAsync(operation.Token)).Trim();
+                if (string.IsNullOrWhiteSpace(text)) { SetStatus(endingConversation ? "Gespräch beendet." : "Kein Text erkannt. Tippe zum erneuten Sprechen."); return; }
                 await TranslateDraftAsync(text, operation.Token);
-                if (!continueListening) SetStatus("Gespräch beendet.");
+                SetStatus(endingConversation ? "Gespräch beendet." : "Übersetzt. Die nächste Person kann die Aufnahme starten.");
             }
-            else if (!string.IsNullOrWhiteSpace(draft.Text)) await TranslateDraftAsync(draft.Text.Trim(), operation.Token);
-            if (continueListening && pageVisible)
+            else if (pageVisible)
             {
-                operation.Token.ThrowIfCancellationRequested(); turnActive = true;
-                try { await speech.StartAsync(CultureInfo.GetCultureInfo(fromGerman ? "de-DE" : "ja-JP")); }
-                catch { turnActive = false; throw; }
-                operation.Token.ThrowIfCancellationRequested();
+                await recording.StartAsync(CultureInfo.GetCultureInfo(fromGerman ? "de-DE" : "ja-JP"), operation.Token);
                 SetStatus(null);
             }
         }
-        catch (OperationCanceledException) { turnActive = false; speech.Stop(); SetStatus("Pausiert. Dein Text bleibt erhalten."); }
-        catch (Exception ex) { turnActive = false; speech.Stop(); SetStatus(ex.Message); }
+        catch (OperationCanceledException) { recording.Suspend(); SetStatus("Pausiert. Dein Text bleibt erhalten."); }
+        catch (Exception ex) { recording.Suspend(); SetStatus(ex.Message); }
         finally { FinishOperation(); }
+    }
+
+    async Task TogglePauseAsync()
+    {
+        if (busy || !recording.HasTurn) return;
+        busy = true; operation = new CancellationTokenSource(); UpdateControls();
+        try
+        {
+            if (recording.IsRecording)
+            {
+                await recording.PauseAsync(operation.Token);
+                SetStatus("Aufnahme pausiert. Du kannst den Text bearbeiten.");
+            }
+            else
+            {
+                draft.Unfocus();
+                await recording.StartAsync(CultureInfo.GetCultureInfo(fromGerman ? "de-DE" : "ja-JP"), operation.Token);
+                SetStatus(null);
+            }
+        }
+        catch (OperationCanceledException) { recording.Suspend(); SetStatus("Aufnahme pausiert."); }
+        catch (Exception ex) { recording.Suspend(); SetStatus(ex.Message); }
+        finally { FinishOperation(); }
+    }
+
+    void SyncDraft()
+    {
+        syncingDraft = true;
+        try { if (draft.Text != recording.Text) draft.Text = recording.Text; }
+        finally { syncingDraft = false; }
+        UpdateControls();
     }
 
     async Task SendTextAsync()
     {
         var text = draft.Text?.Trim();
-        if (busy || turnActive || !auth.IsConnected || string.IsNullOrWhiteSpace(text)) return;
+        if (busy || recording.IsRecording || !auth.IsConnected || string.IsNullOrWhiteSpace(text)) return;
         busy = true; operation = new CancellationTokenSource(); UpdateControls();
-        try { await TranslateDraftAsync(text, operation.Token); }
+        try { await recording.FinishAsync(operation.Token); await TranslateDraftAsync(text, operation.Token); }
         catch (OperationCanceledException) { SetStatus("Übersetzung abgebrochen. Dein Text bleibt erhalten."); }
         catch (Exception ex) { SetStatus(ex.Message); }
         finally { FinishOperation(); }
@@ -291,7 +325,7 @@ public sealed class MainPage : ContentPage
         var translated = await translator.TranslateAsync(text, direction, ct);
         ct.ThrowIfCancellationRequested();
         turns.Add(new(direction ? "Deutsch" : "日本語", direction ? "日本語" : "Deutsch", text, translated.Translation, translated.Romaji));
-        draft.Text = ""; fromGerman = !direction; SetStatus(null);
+        recording.Clear(); fromGerman = !direction; SetStatus(null);
     }
 
     void FinishOperation() { operation?.Dispose(); operation = null; busy = false; UpdateControls(); ScrollToLatest(); }
@@ -301,20 +335,23 @@ public sealed class MainPage : ContentPage
     {
         account.Text = auth.IsConnected ? "Verbunden · Deutsch ↔ 日本語" : "Deutsch ↔ 日本語";
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
-        draft.IsReadOnly = busy || turnActive;
-        send.IsEnabled = !busy && !turnActive && auth.IsConnected && !string.IsNullOrWhiteSpace(draft.Text);
+        draft.IsReadOnly = busy && !pausingForEdit;
+        send.IsEnabled = !busy && !recording.IsRecording && auth.IsConnected && !string.IsNullOrWhiteSpace(draft.Text);
         shutter.IsEnabled = !busy && auth.IsConnected;
-        shutter.Text = turnActive ? "⇄" : "●";
-        shutter.BackgroundColor = turnActive ? Color.FromArgb("#367BAB") : Blue;
-        shutter.Opacity = busy ? 0.45 : 1;
-        SemanticProperties.SetDescription(shutter, turnActive ? "Satz übersetzen und zur anderen Sprache wechseln" : "Gespräch starten");
-        prompt.Text = busy ? "Einen Moment …" : turnActive ? (speech.IsRecording ? (fromGerman ? "Deutsch · sprich jetzt" : "日本語 · sprich jetzt") : "Satz bereit") : "Gespräch starten";
-        hint.Text = busy ? "Dein Satz wird verarbeitet." : turnActive ? "Tippen: übersetzen & wechseln" : (fromGerman ? "Deutsch beginnt. Tippe zum Sprechen." : "日本語 beginnt. Tippe zum Sprechen.");
+        shutter.Text = busy ? "" : recording.IsRecording ? "■" : recording.HasTurn ? "↑" : "●";
+        shutter.BackgroundColor = recording.IsRecording ? Color.FromArgb("#367BAB") : Blue;
+        shutter.Opacity = busy ? 0.65 : 1;
+        SemanticProperties.SetDescription(shutter, recording.HasTurn ? "Satz übersetzen und zur anderen Sprache wechseln" : "Aufnahme starten");
+        prompt.Text = busy ? "Einen Moment …" : recording.IsRecording ? (fromGerman ? "Deutsch · sprich jetzt" : "日本語 · sprich jetzt") : recording.HasTurn ? "Aufnahme pausiert" : (fromGerman ? "Deutsch · bereit" : "日本語 · bereit");
+        hint.Text = busy ? "Dein Satz wird verarbeitet." : recording.IsRecording ? "Nochmals tippen: übersetzen" : recording.HasTurn ? "Text bearbeiten · links fortsetzen · Mitte übersetzen" : "Tippen, um die Aufnahme zu starten";
         german.BackgroundColor = fromGerman ? Color.FromArgb("#CBE2F3") : Colors.Transparent;
         japanese.BackgroundColor = fromGerman ? Colors.Transparent : Color.FromArgb("#CBE2F3");
         german.TextColor = fromGerman ? Ink : Muted; japanese.TextColor = fromGerman ? Muted : Ink;
-        german.IsEnabled = japanese.IsEnabled = !busy && !turnActive;
-        endConversation.IsEnabled = turnActive && !busy; cancel.IsVisible = busy;
+        german.IsEnabled = japanese.IsEnabled = !busy && !recording.HasTurn;
+        endConversation.IsEnabled = recording.HasTurn && !busy; cancel.IsVisible = busy;
+        pauseRecording.IsEnabled = recording.HasTurn && !busy;
+        pauseRecording.Text = recording.State == RecordingState.Paused ? "▶" : "Ⅱ";
+        SemanticProperties.SetDescription(pauseRecording, recording.State == RecordingState.Paused ? "Aufnahme fortsetzen" : "Aufnahme pausieren");
         progress.IsRunning = busy; progress.IsVisible = busy;
     }
 }

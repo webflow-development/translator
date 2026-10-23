@@ -7,11 +7,11 @@ Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.
 - `Koe-Maui/`: aktive iPhone-App und Windows-Version für die Entwicklung.
 - `Koe-iOS/`: bisheriger SwiftUI-Prototyp als unveränderte Referenz; wird vom Root-Workflow nicht mehr gebaut.
 - `codemagic.yaml`: Cloud-Builds für die neue .NET-Version.
-- `tests/Koe.CoreChecks/`: ausführbare Tests für Streaming und ID-Token-Verifikation, ohne Apple-Konto oder API-Aufrufe.
+- `tests/Koe.CoreChecks/`: ausführbare Tests für Streaming, ID-Token-Verifikation, Romaji-Antworten und Aufnahme-/Pausenzustände, ohne Apple-Konto oder API-Aufrufe.
 
 ## Funktionen
 
-Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat. Der große runde Gesprächsknopf unten mittig startet die Aufnahme. Jeder weitere Druck beendet den Satz, übersetzt ihn, wechselt die Sprache und startet das Mikrofon für die andere Person. Der kleine rote Knopf rechts beendet das Gespräch: Der aktuelle Satz wird noch übersetzt, danach startet keine neue Aufnahme. Es gibt keine Sprachausgabe. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
+Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat. Der große runde Gesprächsknopf unten mittig startet die Aufnahme. Der nächste Druck beendet den Satz, übersetzt ihn und wechselt die Sprache. Das Mikrofon bleibt danach aus, bis die andere Person den großen Knopf drückt. Links pausiert die kleine Taste die Aufnahme und setzt sie wieder fort. Der bisherige Text bleibt dabei erhalten; weitere Wörter werden angehängt. Tippen ins Textfeld pausiert die Aufnahme zum Bearbeiten. Markieren, Löschen, Einfügen und Korrigieren sind im nativen Editor möglich; danach links fortsetzen oder den korrigierten Satz übersetzen. Während der Verarbeitung liegt die Ladeanzeige über dem großen Knopf. Der kleine rote Knopf rechts beendet das Gespräch: Der aktuelle Satz wird noch übersetzt, danach startet keine neue Aufnahme. Es gibt keine Sprachausgabe. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
 
 Die ChatGPT-Anmeldung verwendet den dokumentierten Open-Source-SIWC-Flow mit PKCE, State, Nonce, Loopback-Callback und RS256-ID-Token-Verifikation. Tokens liegen in MAUI SecureStorage (auf iOS im Schlüsselbund). Es wird kein API-Schlüssel eingebaut. Übersetzungen verwenden ein vom Konto angebotenes Modell und die öffentliche Responses API mit `store=false` und `stream=true`. Es werden nur erkannte Texte an OpenAI geschickt. Apples Spracherkennung kann je nach Gerät und Sprache Apples Server nutzen.
 
