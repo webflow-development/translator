@@ -15,6 +15,9 @@ public sealed class IosSpeechCapture : ISpeechCapture
     bool tapInstalled;
     bool starting;
     int generation;
+    string transcript = "";
+    TaskCompletionSource? finalResult;
+    bool finishing;
     public bool IsRecording { get; private set; }
     public event Action<string>? TranscriptChanged;
     public event Action<string?>? Stopped;
@@ -26,6 +29,7 @@ public sealed class IosSpeechCapture : ISpeechCapture
         try
         {
             Stop();
+            transcript = "";
             var authorization = new TaskCompletionSource<SFSpeechRecognizerAuthorizationStatus>();
             SFSpeechRecognizer.RequestAuthorization(value => authorization.TrySetResult(value));
             if (await authorization.Task != SFSpeechRecognizerAuthorizationStatus.Authorized)
@@ -58,9 +62,15 @@ public sealed class IosSpeechCapture : ISpeechCapture
             task = recognizer.GetRecognitionTask(audioRequest, (result, error) => MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (currentGeneration != generation) return;
-                if (result is not null) TranscriptChanged?.Invoke(result.BestTranscription.FormattedString);
+                if (result is not null)
+                {
+                    transcript = result.BestTranscription.FormattedString;
+                    TranscriptChanged?.Invoke(transcript);
+                }
                 if (error is not null || result?.Final == true)
                 {
+                    finalResult?.TrySetResult();
+                    if (finishing) return;
                     var message = error?.LocalizedDescription;
                     Stop();
                     if (message is not null) Stopped?.Invoke(message);
@@ -69,6 +79,25 @@ public sealed class IosSpeechCapture : ISpeechCapture
         }
         catch { Stop(); throw; }
         finally { starting = false; }
+    }
+
+    public async Task<string> FinishAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsRecording) return transcript;
+        finishing = true;
+        finalResult = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            if (engine?.Running == true) engine.Stop();
+            if (tapInstalled) { engine?.InputNode.RemoveTapOnBus(0); tapInstalled = false; }
+            request?.EndAudio();
+            // Wait for the final words before cancelling recognition.
+            try { await finalResult.Task.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken); }
+            catch (TimeoutException) { /* Keep the latest partial transcript. */ }
+            cancellationToken.ThrowIfCancellationRequested();
+            return transcript;
+        }
+        finally { finishing = false; Stop(); finalResult = null; }
     }
 
     public void Stop()

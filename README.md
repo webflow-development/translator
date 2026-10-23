@@ -11,7 +11,7 @@ Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.
 
 ## Funktionen
 
-Deutsch ↔ Japanisch als Chatverlauf, Texteingabe, iPhone-Diktat und Vorlesen mit der passenden Sprache. Nach einer Übersetzung wechselt die Sprechrichtung. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
+Deutsch ↔ Japanisch als hellblauer Messenger mit Texteingabe und iPhone-Diktat. Der große runde Gesprächsknopf unten links startet die Aufnahme. Jeder weitere Druck beendet den Satz, übersetzt ihn, wechselt die Sprache und startet das Mikrofon für die andere Person. Pause übersetzt den aktuellen Satz, ohne die nächste Aufnahme zu starten. Es gibt keine Sprachausgabe. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
 
 Die ChatGPT-Anmeldung verwendet den dokumentierten Open-Source-SIWC-Flow mit PKCE, State, Nonce, Loopback-Callback und RS256-ID-Token-Verifikation. Tokens liegen in MAUI SecureStorage (auf iOS im Schlüsselbund). Es wird kein API-Schlüssel eingebaut. Übersetzungen verwenden ein vom Konto angebotenes Modell und die öffentliche Responses API mit `store=false` und `stream=true`. Es werden nur erkannte Texte an OpenAI geschickt. Apples Spracherkennung kann je nach Gerät und Sprache Apples Server nutzen.
 
@@ -32,13 +32,13 @@ Die Konfiguration erwartet SDK 10.0.402, Workload-Set 10.0.402.1 und Xcode 27.1.
 
 1. Änderungen ins verbundene GitHub-Repo übernehmen.
 2. Zuerst **Koe iOS compile check (no signing)** starten. Dieser Workflow kompiliert für den iOS-Simulator ohne Apple-Signierungsdateien. Er veröffentlicht keine App und ist kein iPhone-Laufzeittest.
-3. Für **Koe iOS TestFlight** die Integration exakt **Koe App Store Connect** nennen. Apple-Distribution-Zertifikat mit privatem Schlüssel und ein gültiges App-Store-Profil für **ch.paulo.koe** in Codemagic hinterlegen. Die API-Verbindung allein erzeugt diese Dateien nicht.
+3. Für **Koe iOS TestFlight** die Integration exakt **webflow** nennen. Apple-Distribution-Zertifikat mit privatem Schlüssel und ein gültiges App-Store-Profil für **ch.paulo.koe** in Codemagic hinterlegen. Die API-Verbindung allein erzeugt diese Dateien nicht.
 4. App-ID und App-Store-Connect-App-Datensatz für `ch.paulo.koe` müssen vorhanden sein.
 5. **Koe iOS TestFlight** baut die IPA und lädt sie nach App Store Connect. Die Buildnummer wird aus Codemagics BUILD_NUMBER + 1 gebildet; sie muss höher sein als bereits hochgeladene Builds. Bei bestehender App gegebenenfalls die Buildnummerierung in Codemagic erhöhen.
 
 ## Noch auf einem echten iPhone zu prüfen
 
-Ein erfolgreicher Compile-Check genügt nicht für die Freigabe: Starten, Mikrofon-/Sprachberechtigungen, Diktat in beiden Sprachen, Login-Abbruch, Loopback-/Browser-Rückkehr, Token-Erneuerung, Abmelden, Übersetzung und Vorlesen müssen auf einem iPhone getestet werden. SIWC ist eine Vorschau; insbesondere der Loopback-Browser-Flow auf iOS ist ein zu verifizierender Integrationspunkt. Kontoberechtigung und Plan-Verfügbarkeit hängen von OpenAI ab.
+Ein erfolgreicher Compile-Check genügt nicht für die Freigabe: Starten, Mikrofon-/Sprachberechtigungen, Diktat in beiden Sprachen, Login-Abbruch, Loopback-/Browser-Rückkehr, Token-Erneuerung, Abmelden, Übersetzung, Sprecherwechsel und Pause müssen auf einem iPhone getestet werden. SIWC ist eine Vorschau; insbesondere der Loopback-Browser-Flow auf iOS ist ein zu verifizierender Integrationspunkt. Kontoberechtigung und Plan-Verfügbarkeit hängen von OpenAI ab.
 
 Offizielle Quellen:
 - https://developers.openai.com/siwc/token-sharing-open-source/sign-in
