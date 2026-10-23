@@ -30,7 +30,7 @@ public sealed class MainPage : ContentPage
     readonly Editor draft = new() { Placeholder = "Nachricht eingeben …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     readonly Button send = new() { Text = "↑", FontSize = 25, WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.End };
-    readonly Button shutter = new() { Text = "●", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White };
+    readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
     readonly Button endConversation = new() { Text = "■", FontSize = 19, TextColor = Colors.White, BackgroundColor = Color.FromArgb("#CE4949"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0 };
     readonly Button pauseRecording = new() { Text = "Ⅱ", FontSize = 21, TextColor = Ink, BackgroundColor = Color.FromArgb("#CBE2F3"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
     readonly Button cancel = new() { Text = "Abbrechen", FontSize = 13, BackgroundColor = Colors.Transparent, TextColor = Muted, IsVisible = false, Padding = new Thickness(6, 4) };
@@ -339,8 +339,9 @@ public sealed class MainPage : ContentPage
         draft.IsReadOnly = busy && !pausingForEdit;
         send.IsEnabled = !busy && !recording.IsRecording && auth.IsConnected && !string.IsNullOrWhiteSpace(draft.Text);
         shutter.IsEnabled = !busy && auth.IsConnected;
-        shutter.Text = busy ? "" : recording.HasTurn ? "↑" : "●";
-        var buttonColor = busy ? Color.FromArgb("#7E96AB") : recording.IsRecording ? Color.FromArgb("#32806A") : recording.HasTurn ? Color.FromArgb("#E8BD70") : Blue;
+        shutter.Text = !busy && recording.HasTurn ? "↑" : "";
+        shutter.ImageSource = !busy && !recording.HasTurn ? ImageSource.FromFile("microphone.png") : null;
+        var buttonColor = busy ? Color.FromArgb("#7E96AB") : recording.IsRecording ? Color.FromArgb("#B63E46") : recording.HasTurn ? Color.FromArgb("#E8BD70") : Color.FromArgb("#CF4F55");
         shutter.BackgroundColor = buttonColor;
         shutterRing.Stroke = buttonColor;
         shutter.TextColor = !busy && recording.State == RecordingState.Paused ? Ink : Colors.White;

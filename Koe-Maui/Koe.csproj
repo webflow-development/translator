@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
     <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#2458CC" />
     <MauiImage Include="Resources/Images/copy.svg" />
+    <MauiImage Include="Resources/Images/microphone.svg" />
     <MauiSplashScreen Include="Resources/Splash/splash.svg" Color="#F3F5FA" BaseSize="128,128" />
   </ItemGroup>
 </Project>
