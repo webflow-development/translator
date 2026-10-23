@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>LSRequiresIPhoneOS</key><true/>
+  <key>UIApplicationSceneManifest</key><dict>
+    <key>UIApplicationSupportsMultipleScenes</key><false/>
+    <key>UISceneConfigurations</key><dict><key>UIWindowSceneSessionRoleApplication</key><array><dict>
+      <key>UISceneConfigurationName</key><string>__MAUI_DEFAULT_SCENE_CONFIGURATION__</string>
+      <key>UISceneDelegateClassName</key><string>SceneDelegate</string>
+    </dict></array></dict>
+  </dict>
+  <key>UIDeviceFamily</key><array><integer>1</integer></array>
+  <key>UILaunchStoryboardName</key><string>MauiSplash</string>
+  <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+  <key>NSMicrophoneUsageDescription</key><string>Koe benötigt das Mikrofon für die Spracheingabe.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Koe erkennt gesprochene Sätze, um sie zu übersetzen.</string>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>ch.paulo.koe</string><key>CFBundleURLSchemes</key><array><string>koeapp</string></array></dict></array>
+</dict></plist>

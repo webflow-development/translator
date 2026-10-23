@@ -1,25 +1,49 @@
-# Koe – Gesprächsübersetzer
+# Koe – .NET MAUI
 
-Koe ist ein iOS-Prototyp für persönliche Gespräche auf Deutsch und Japanisch. Die Oberfläche zeigt beide Seiten als Messenger-Verlauf. Spracheingabe und Vorlesen laufen über iOS; erkannter Text wird mit der OpenAI Responses API übersetzt.
+Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.
 
-## iOS-Prototyp
+## Projektstruktur
 
-Der SwiftUI-Prototyp und Build-Hinweise liegen in [`Koe-iOS/`](./Koe-iOS/). Er verwendet den offenen Sign in with ChatGPT (SIWC)-Flow mit PKCE und speichert Tokens im iOS-Schlüsselbund. Ein eigener Backend-Server und ein vom App-Anbieter verwalteter API-Schlüssel sind nicht vorgesehen.
+- `Koe-Maui/`: aktive iPhone-App und Windows-Version für die Entwicklung.
+- `Koe-iOS/`: bisheriger SwiftUI-Prototyp als unveränderte Referenz; wird vom Root-Workflow nicht mehr gebaut.
+- `codemagic.yaml`: Cloud-Builds für die neue .NET-Version.
+- `tests/Koe.CoreChecks/`: ausführbare Tests für Streaming und ID-Token-Verifikation, ohne Apple-Konto oder API-Aufrufe.
 
-## Status
+## Funktionen
 
-Dies ist ein nicht verifizierter Prototyp. Insbesondere müssen Xcode-Build, OAuth-Callback auf einem echten iPhone und App-Store-/TestFlight-Konfiguration noch getestet werden. Die Anmeldung mit ChatGPT ist keine allgemeine Freigabe des ChatGPT-Abonnements für beliebige API-Aufrufe; Verfügbarkeit und Nutzungsbedingungen hängen von OpenAIs SIWC-Unterstützung ab. Prüfe vor Verteilung die aktuellen OpenAI-Vorgaben.
+Deutsch ↔ Japanisch als Chatverlauf, Texteingabe, iPhone-Diktat und Vorlesen mit der passenden Sprache. Nach einer Übersetzung wechselt die Sprechrichtung. Der Verlauf bleibt nur im Arbeitsspeicher und kann gelöscht werden. Auf Windows ist Texteingabe verfügbar; das Diktat ist iOS-spezifisch.
 
-Die App nutzt Apples Spracherkennung für Spracheingabe. Übersetzt wird der erkannte Text über die API; ChatGPT-Abozugang umfasst nicht automatisch Audio- oder Transkriptions-API-Aufrufe.
+Die ChatGPT-Anmeldung verwendet den dokumentierten Open-Source-SIWC-Flow mit PKCE, State, Nonce, Loopback-Callback und RS256-ID-Token-Verifikation. Tokens liegen in MAUI SecureStorage (auf iOS im Schlüsselbund). Es wird kein API-Schlüssel eingebaut. Übersetzungen verwenden ein vom Konto angebotenes Modell und die öffentliche Responses API mit `store=false` und `stream=true`. Es werden nur erkannte Texte an OpenAI geschickt. Apples Spracherkennung kann je nach Gerät und Sprache Apples Server nutzen.
 
-## Build
+## Unter Windows entwickeln
 
-1. Auf einem Mac Xcode und XcodeGen installieren.
-2. Im Ordner `Koe-iOS/` `xcodegen generate --spec project.yml` ausführen.
-3. Projekt in Xcode öffnen, Team/Signing konfigurieren und auf einem iPhone testen.
+1. .NET SDK **10.0.402** und Visual Studio mit .NET MAUI oder VS Code mit C#/.NET-MAUI-Erweiterungen installieren.
+2. Im Repo-Root `dotnet workload install maui-windows --version 10.0.402.1` ausführen.
+3. `dotnet build Koe-Maui/Koe.csproj -f net10.0-windows10.0.19041.0`.
+4. `dotnet build Koe-Maui/Koe.csproj -t:Run -f net10.0-windows10.0.19041.0`.
 
-Für Cloud-Builds ist eine Codemagic-Konfiguration unter [`codemagic.yaml`](./codemagic.yaml) enthalten. Apple-Zugangsdaten, Tokens und Zertifikate gehören nicht ins Repository.
+Tests: `dotnet run --project tests/Koe.CoreChecks/Koe.CoreChecks.csproj -c Release`.
 
-## Lizenz
+Die iOS-App wird auf einem Mac kompiliert. Ein Windows-PC oder eine Windows-VM genügt zum Bearbeiten und zum Windows-Test; er ersetzt keinen Mac für den iOS-Simulator oder iOS-Debugging.
 
-Der iOS-Prototyp steht unter MIT-Lizenz; Details siehe [`Koe-iOS/LICENSE`](./Koe-iOS/LICENSE).
+## Codemagic
+
+Die Konfiguration erwartet SDK 10.0.402, Workload-Set 10.0.402.1 und Xcode 27.1. Diese Versionen gehören zusammen; nicht unabhängig auf `latest` umstellen.
+
+1. Änderungen ins verbundene GitHub-Repo übernehmen.
+2. Zuerst **Koe iOS compile check (no signing)** starten. Dieser Workflow kompiliert für den iOS-Simulator ohne Apple-Signierungsdateien. Er veröffentlicht keine App und ist kein iPhone-Laufzeittest.
+3. Für **Koe iOS TestFlight** die Integration exakt **Koe App Store Connect** nennen. Apple-Distribution-Zertifikat mit privatem Schlüssel und ein gültiges App-Store-Profil für **ch.paulo.koe** in Codemagic hinterlegen. Die API-Verbindung allein erzeugt diese Dateien nicht.
+4. App-ID und App-Store-Connect-App-Datensatz für `ch.paulo.koe` müssen vorhanden sein.
+5. **Koe iOS TestFlight** baut die IPA und lädt sie nach App Store Connect. Die Buildnummer wird aus Codemagics BUILD_NUMBER + 1 gebildet; sie muss höher sein als bereits hochgeladene Builds. Bei bestehender App gegebenenfalls die Buildnummerierung in Codemagic erhöhen.
+
+## Noch auf einem echten iPhone zu prüfen
+
+Ein erfolgreicher Compile-Check genügt nicht für die Freigabe: Starten, Mikrofon-/Sprachberechtigungen, Diktat in beiden Sprachen, Login-Abbruch, Loopback-/Browser-Rückkehr, Token-Erneuerung, Abmelden, Übersetzung und Vorlesen müssen auf einem iPhone getestet werden. SIWC ist eine Vorschau; insbesondere der Loopback-Browser-Flow auf iOS ist ein zu verifizierender Integrationspunkt. Kontoberechtigung und Plan-Verfügbarkeit hängen von OpenAI ab.
+
+Offizielle Quellen:
+- https://developers.openai.com/siwc/token-sharing-open-source/sign-in
+- https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+- https://docs.codemagic.io/yaml-quick-start/building-a-dotnet-maui-app/
+- https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018
+
+MIT-Lizenz: siehe `Koe-iOS/LICENSE`.

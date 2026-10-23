@@ -1,28 +1,72 @@
 workflows:
   koe-testflight:
     name: Koe iOS TestFlight
-    max_build_duration: 60
+    max_build_duration: 90
     instance_type: mac_mini_m2
     integrations:
       app_store_connect: Koe App Store Connect
     environment:
+      xcode: 27.1
       ios_signing:
         distribution_type: app_store
         bundle_identifier: ch.paulo.koe
-      xcode: latest
     scripts:
-      - name: Extract source and generate the Xcode project
+      - name: Install .NET SDK and iOS workload
         script: |
-          unzip -q Koe-iOS-prototype.zip
-          cd Koe-iOS
-          brew install xcodegen
-          xcodegen generate --spec project.yml
-          xcode-project use-profiles
-          xcode-project build-ipa --project Koe.xcodeproj --scheme Koe
+          set -euo pipefail
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/koe-dotnet-install.sh
+          bash /tmp/koe-dotnet-install.sh --version 10.0.402 --install-dir "$CM_BUILD_DIR/.dotnet"
+          echo "DOTNET_ROOT=$CM_BUILD_DIR/.dotnet" >> "$CM_ENV"
+          echo "PATH=$CM_BUILD_DIR/.dotnet:$PATH" >> "$CM_ENV"
+          "$CM_BUILD_DIR/.dotnet/dotnet" workload install maui-ios --version 10.0.402.1
+      - name: Verify shared C# services
+        script: |
+          set -euo pipefail
+          dotnet run --project tests/Koe.CoreChecks/Koe.CoreChecks.csproj --configuration Release
+      - name: Select signing profile and build IPA
+        script: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/select-signing.py > artifacts/signing.env
+          source artifacts/signing.env
+          dotnet publish Koe-Maui/Koe.csproj \
+            -f net10.0-ios -c Release \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:ArchiveOnBuild=true -p:BuildIpa=true \
+            -p:ApplicationVersion="$(( ${BUILD_NUMBER:-0} + 1 ))" \
+            -p:CodesignKey="$KOE_SIGNING_CERTIFICATE" \
+            -p:CodesignProvision="$KOE_SIGNING_PROFILE" \
+            -p:IpaPackageDir="$CM_BUILD_DIR/artifacts/" \
+            -bl:artifacts/koe-build.binlog
+          find Koe-Maui/bin -name '*.ipa' -exec cp {} artifacts/ \;
+          test -n "$(find artifacts -maxdepth 1 -name '*.ipa' -print -quit)"
     artifacts:
-      - Koe-iOS/build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
+      - artifacts/*.ipa
+      - artifacts/*.binlog
+      - Koe-Maui/bin/**/*.dSYM
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+  koe-ios-check:
+    name: Koe iOS compile check (no signing)
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    environment:
+      xcode: 27.1
+    scripts:
+      - name: Install .NET and compile for iOS Simulator
+        script: |
+          set -euo pipefail
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/koe-dotnet-install.sh
+          bash /tmp/koe-dotnet-install.sh --version 10.0.402 --install-dir "$CM_BUILD_DIR/.dotnet"
+          export PATH="$CM_BUILD_DIR/.dotnet:$PATH"
+          export DOTNET_ROOT="$CM_BUILD_DIR/.dotnet"
+          dotnet workload install maui-ios --version 10.0.402.1
+          dotnet run --project tests/Koe.CoreChecks/Koe.CoreChecks.csproj -c Release
+          mkdir -p artifacts
+          dotnet build Koe-Maui/Koe.csproj -f net10.0-ios -c Debug \
+            -p:RuntimeIdentifier=iossimulator-arm64 -p:EnableCodeSigning=false \
+            -bl:artifacts/koe-ios-check.binlog
+    artifacts:
+      - artifacts/*.binlog
