@@ -24,6 +24,8 @@ public sealed class MainPage : ContentPage
     readonly CollectionView messages;
     int scrollRevision;
     string textSize = Preferences.Default.Get("koe.text-size", "Mittel");
+    bool showRomaji = Preferences.Default.Get("koe.show-romaji", true);
+    public bool ShowRomaji => showRomaji;
     public double MessageFontSize => textSize == "Klein" ? 16 : textSize == "Groß" ? 23 : 18;
     public double OriginalFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 19 : 14;
     public double RomajiFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
@@ -138,6 +140,10 @@ public sealed class MainPage : ContentPage
         originalRomaji.SetBinding(Label.TextProperty, nameof(ConversationTurn.RomajiCaption));
         originalRomaji.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.OriginalHasRomaji));
         originalRomaji.SetBinding(Label.FontSizeProperty, new Binding(nameof(RomajiFontSize), source: this));
+        var translatedReading = new VerticalStackLayout { Children = { translatedRomaji } };
+        translatedReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowRomaji), source: this));
+        var originalReading = new VerticalStackLayout { Children = { originalRomaji } };
+        originalReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowRomaji), source: this));
         var copyTranslation = CopyButton("Übersetzung kopieren");
         copyTranslation.Clicked += async (_, _) =>
         {
@@ -156,7 +162,7 @@ public sealed class MainPage : ContentPage
         {
             Margin = new Thickness(4, 6, 34, 6), Padding = new Thickness(14, 11), StrokeThickness = 0, BackgroundColor = Colors.White,
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(17, 17, 4, 17) }, HorizontalOptions = LayoutOptions.Start, MaximumWidthRequest = 330,
-            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, translatedRow, translatedRomaji, originalRow, originalRomaji } }
+            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, translatedRow, translatedReading, originalRow, originalReading } }
         };
         bubble.BindingContextChanged += (_, _) =>
         {
@@ -226,6 +232,20 @@ public sealed class MainPage : ContentPage
     }
 
     async Task ShowSettingsAsync()
+    {
+        var romajiAction = showRomaji ? "Romaji ausschalten" : "Romaji einschalten";
+        var choice = await DisplayActionSheetAsync("Einstellungen", "Schließen", null, $"Textgröße · {textSize}", romajiAction);
+        if (choice == romajiAction)
+        {
+            showRomaji = !showRomaji;
+            Preferences.Default.Set("koe.show-romaji", showRomaji);
+            OnPropertyChanged(nameof(ShowRomaji));
+            ScrollToLatest();
+        }
+        else if (choice == $"Textgröße · {textSize}") await ShowTextSizeAsync();
+    }
+
+    async Task ShowTextSizeAsync()
     {
         var selection = await DisplayActionSheetAsync($"Textgröße · {textSize}", "Abbrechen", null, "Klein", "Mittel", "Groß");
         if (selection is not ("Klein" or "Mittel" or "Groß")) return;
