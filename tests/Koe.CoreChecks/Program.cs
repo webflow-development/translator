@@ -204,6 +204,17 @@ await Check("Missing image reading is rejected rather than dropping source text"
     TranslationResult.Parse("{\"translation\":\"Danke\",\"romaji\":\"Arigatō\",\"image_text_found\":true,\"image_from_german\":false,\"image_original\":\"猫\",\"image_translation\":\"Katze\"}", hasImage: true);
     return Task.CompletedTask;
 }));
+await Check("Sending during recording waits for final words and leaves microphone off", async () =>
+{
+    var speech = new FakeSpeech { FinalGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+    var draft = new SpeechDraft(speech);
+    await draft.StartAsync(System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    speech.Emit("Ein Wasser");
+    var finishing = draft.FinishAsync();
+    if (finishing.IsCompleted) throw new Exception("Final words were not awaited.");
+    speech.FinalGate.SetResult("Ein Wasser ohne Eis bitte.");
+    if (await finishing != "Ein Wasser ohne Eis bitte." || draft.HasTurn || speech.IsRecording || speech.StartCount != 1) throw new Exception();
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler
