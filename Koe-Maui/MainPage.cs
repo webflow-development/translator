@@ -143,7 +143,7 @@ public sealed class MainPage : ContentPage
         if (draft.Handler?.PlatformView is UIKit.UITextView textView)
         {
             var top = Math.Max(6, (44 - (double)(textView.Font?.LineHeight ?? 20)) / 2);
-            textView.TextContainerInset = new UIKit.UIEdgeInsets(top, 0, 8, 0);
+            textView.TextContainerInset = new UIKit.UIEdgeInsets((System.Runtime.InteropServices.NFloat)top, 0, 8, 0);
             textView.TextContainer.LineFragmentPadding = 0;
         }
 #elif WINDOWS
