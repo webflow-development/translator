@@ -6,5 +6,7 @@
     <Compile Include="../../Koe-Maui/Services/TranslationResult.cs" Link="TranslationResult.cs" />
     <Compile Include="../../Koe-Maui/Services/ISpeechCapture.cs" Link="ISpeechCapture.cs" />
     <Compile Include="../../Koe-Maui/Services/SpeechDraft.cs" Link="SpeechDraft.cs" />
+    <Compile Include="../../Koe-Maui/Services/ImageAttachment.cs" Link="ImageAttachment.cs" />
+    <Compile Include="../../Koe-Maui/Services/TranslationRequest.cs" Link="TranslationRequest.cs" />
   </ItemGroup>
 </Project>

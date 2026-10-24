@@ -14,6 +14,9 @@
   <key>UILaunchStoryboardName</key><string>MauiSplash</string>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
   <key>NSMicrophoneUsageDescription</key><string>Koe benötigt das Mikrofon für die Spracheingabe.</string>
+  <key>NSCameraUsageDescription</key><string>Koe verwendet die Kamera, um Text auf deinem Foto zusammen mit deiner Nachricht zu übersetzen.</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>Wähle ein Foto aus, dessen Text Koe zusammen mit deiner Nachricht übersetzen soll.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key><string>Koe benötigt Zugriff für die Fotoaufnahme über die Kamera.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Koe erkennt gesprochene Sätze, um sie zu übersetzen.</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>ch.paulo.koe</string><key>CFBundleURLSchemes</key><array><string>koeapp</string></array></dict></array>

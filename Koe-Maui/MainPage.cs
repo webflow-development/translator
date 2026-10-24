@@ -5,13 +5,16 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Koe;
 
-public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string Romaji)
+public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string Romaji, ImageAttachment? Attachment = null)
 {
-    public string Direction => $"{Source}  →  {Target}";
+    public string Direction => string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
     public bool FromGerman => Source == "Deutsch";
     public string RomajiCaption => "Rōmaji · " + Romaji;
     public bool TranslationHasRomaji => FromGerman && !string.IsNullOrWhiteSpace(Romaji);
     public bool OriginalHasRomaji => !FromGerman && !string.IsNullOrWhiteSpace(Romaji);
+    public ImageSource? Picture => Attachment is null ? null : ImageSource.FromStream(() => new MemoryStream(Attachment.Bytes, writable: false));
+    public bool HasPicture => Attachment is not null;
+    public bool HasOriginal => !string.IsNullOrWhiteSpace(Original);
 }
 
 public sealed class MainPage : ContentPage
@@ -30,6 +33,13 @@ public sealed class MainPage : ContentPage
     public double OriginalFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 19 : 14;
     public double RomajiFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
     readonly Editor draft = new() { Placeholder = "Nachricht eingeben …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
+    readonly Button attach = new() { Text = "+", FontSize = 28, WidthRequest = 40, HeightRequest = 44, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue, VerticalOptions = LayoutOptions.End };
+    readonly Image attachmentPreview = new() { WidthRequest = 70, HeightRequest = 70, Aspect = Aspect.AspectFill };
+    readonly Label attachmentName = new() { FontSize = 12, TextColor = Ink, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
+    readonly Button removeAttachment = new() { Text = "×", FontSize = 24, WidthRequest = 40, HeightRequest = 40, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Muted };
+    readonly Border attachmentCard;
+    ImageAttachment? pendingImage;
+    bool pickingAttachment;
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     readonly Button send = new() { Text = "↑", FontSize = 25, WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.End };
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
@@ -78,8 +88,13 @@ public sealed class MainPage : ContentPage
         languages.Add(german, 0, 0);
         languages.Add(new Label { Text = "⇄", FontSize = 21, TextColor = Blue, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
         languages.Add(japanese, 2, 0);
-        var input = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        input.Add(draft, 0, 0); input.Add(send, 1, 0);
+        var input = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        input.Add(attach, 0, 0); input.Add(draft, 1, 0); input.Add(send, 2, 0);
+        var attachmentRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        attachmentRow.Add(attachmentPreview, 0, 0);
+        attachmentRow.Add(new VerticalStackLayout { VerticalOptions = LayoutOptions.Center, Spacing = 4, Children = { attachmentName, new Label { Text = "Bildtext + deine Nachricht übersetzen", FontSize = 11, TextColor = Muted } } }, 1, 0);
+        attachmentRow.Add(removeAttachment, 2, 0);
+        attachmentCard = new Border { IsVisible = false, Padding = 8, BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DCE8F0"), StrokeShape = new RoundRectangle { CornerRadius = 16 }, Content = attachmentRow };
         var inputBorder = new Border { BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DCE8F0"), StrokeShape = new RoundRectangle { CornerRadius = 24 }, Padding = new Thickness(12, 4, 5, 4), Content = input };
         shutterRing = new Border { WidthRequest = 94, HeightRequest = 94, Padding = 6, StrokeThickness = 2, Stroke = Blue, StrokeShape = new Ellipse(), HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = shutter };
         prompt.HorizontalTextAlignment = TextAlignment.Center;
@@ -89,12 +104,16 @@ public sealed class MainPage : ContentPage
         turnControls.Add(pauseRecording, 0, 0);
         turnControls.Add(new Grid { WidthRequest = 94, HeightRequest = 94, HorizontalOptions = LayoutOptions.Center, Children = { shutterRing, progress } }, 1, 0);
         turnControls.Add(new VerticalStackLayout { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Spacing = 2, Children = { endConversation, cancel } }, 2, 0);
-        var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, inputBorder, turnCaption, turnControls, status } };
+        var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, attachmentCard, inputBorder, turnCaption, turnControls, status } };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
         root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(composer, 0, 3);
         Content = root;
         SemanticProperties.SetDescription(endConversation, "Gespräch beenden");
         SemanticProperties.SetDescription(send, "Geschriebenen Text übersetzen");
+        SemanticProperties.SetDescription(attach, "Foto, Kamera oder Bilddatei auswählen");
+        SemanticProperties.SetDescription(removeAttachment, "Bild entfernen");
+        attach.Clicked += async (_, _) => await PickAttachmentAsync();
+        removeAttachment.Clicked += (_, _) => { if (!busy) SetAttachment(null); };
         connect.Clicked += async (_, _) => await ConnectAsync();
         shutter.Clicked += async (_, _) => await AdvanceConversationAsync(false);
         endConversation.Clicked += async (_, _) => await AdvanceConversationAsync(true);
@@ -157,12 +176,16 @@ public sealed class MainPage : ContentPage
         var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
         translatedRow.Add(translation, 0, 0); translatedRow.Add(copyTranslation, 1, 0);
         var originalRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        originalRow.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasOriginal));
         originalRow.Add(original, 0, 0); originalRow.Add(copyOriginal, 1, 0);
+        var picture = new Image { HeightRequest = 150, Aspect = Aspect.AspectFit };
+        picture.SetBinding(Image.SourceProperty, nameof(ConversationTurn.Picture));
+        picture.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasPicture));
         var bubble = new Border
         {
             Margin = new Thickness(4, 6, 34, 6), Padding = new Thickness(14, 11), StrokeThickness = 0, BackgroundColor = Colors.White,
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(17, 17, 4, 17) }, HorizontalOptions = LayoutOptions.Start, MaximumWidthRequest = 330,
-            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, translatedRow, translatedReading, originalRow, originalReading } }
+            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, picture, translatedRow, translatedReading, originalRow, originalReading } }
         };
         bubble.BindingContextChanged += (_, _) =>
         {
@@ -214,8 +237,49 @@ public sealed class MainPage : ContentPage
 
     protected override void OnDisappearing()
     {
-        pageVisible = false; operation?.Cancel(); recording.Suspend();
+        if (!pickingAttachment) { pageVisible = false; operation?.Cancel(); recording.Suspend(); }
         base.OnDisappearing();
+    }
+
+    async Task PickAttachmentAsync()
+    {
+        if (busy) return;
+        draft.Unfocus();
+        busy = true; pickingAttachment = true; operation = new CancellationTokenSource(); UpdateControls();
+        try
+        {
+            if (recording.IsRecording) await recording.PauseAsync(operation.Token);
+            var choice = await DisplayActionSheetAsync("Bild hinzufügen", "Abbrechen", null, "Foto auswählen", "Kamera", "Bilddatei auswählen");
+            FileResult? file = null;
+            switch (choice)
+            {
+                case "Foto auswählen":
+                    var photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions { SelectionLimit = 1 });
+                    file = photos.FirstOrDefault(); break;
+                case "Kamera":
+                    if (!MediaPicker.Default.IsCaptureSupported) { SetStatus("Auf diesem Gerät ist keine Kamera verfügbar."); return; }
+                    file = await MediaPicker.Default.CapturePhotoAsync(); break;
+                case "Bilddatei auswählen":
+                    file = await FilePicker.Default.PickAsync(new PickOptions { PickerTitle = "Bild auswählen", FileTypes = FilePickerFileType.Images }); break;
+                default: return;
+            }
+            if (file is null) return;
+            SetAttachment(await AttachmentLoader.LoadAsync(file, operation.Token));
+            SetStatus("Bild bereit. Sprich oder schreibe dazu, oder sende das Bild direkt mit ↑.");
+        }
+        catch (OperationCanceledException) { }
+        catch (PermissionException) { SetStatus("Bitte erlaube Koe den Kamera- bzw. Fotozugriff in den iPhone-Einstellungen."); }
+        catch (Exception ex) { SetStatus(ex.Message); }
+        finally { pickingAttachment = false; FinishOperation(); }
+    }
+
+    void SetAttachment(ImageAttachment? image)
+    {
+        pendingImage = image;
+        attachmentPreview.Source = image is null ? null : ImageSource.FromStream(() => new MemoryStream(image.Bytes, writable: false));
+        attachmentName.Text = image?.Name;
+        attachmentCard.IsVisible = image is not null;
+        UpdateControls();
     }
 
     async Task ShowMenuAsync()
@@ -282,7 +346,7 @@ public sealed class MainPage : ContentPage
             if (recording.HasTurn || endingConversation)
             {
                 var text = (await recording.FinishAsync(operation.Token)).Trim();
-                if (string.IsNullOrWhiteSpace(text)) { SetStatus(endingConversation ? "Gespräch beendet." : "Kein Text erkannt. Tippe zum erneuten Sprechen."); return; }
+                if (string.IsNullOrWhiteSpace(text) && pendingImage is null) { SetStatus(endingConversation ? "Gespräch beendet." : "Kein Text erkannt. Tippe zum erneuten Sprechen."); return; }
                 await TranslateDraftAsync(text, operation.Token);
                 SetStatus(endingConversation ? "Gespräch beendet." : "Übersetzt. Die nächste Person kann die Aufnahme starten.");
             }
@@ -330,8 +394,8 @@ public sealed class MainPage : ContentPage
 
     async Task SendTextAsync()
     {
-        var text = draft.Text?.Trim();
-        if (busy || recording.IsRecording || !auth.IsConnected || string.IsNullOrWhiteSpace(text)) return;
+        var text = draft.Text?.Trim() ?? "";
+        if (busy || recording.IsRecording || !auth.IsConnected || (string.IsNullOrWhiteSpace(text) && pendingImage is null)) return;
         busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try { await recording.FinishAsync(operation.Token); await TranslateDraftAsync(text, operation.Token); }
         catch (OperationCanceledException) { SetStatus("Übersetzung abgebrochen. Dein Text bleibt erhalten."); }
@@ -343,10 +407,20 @@ public sealed class MainPage : ContentPage
     {
         SetStatus("Übersetze …");
         var direction = fromGerman;
-        var translated = await translator.TranslateAsync(text, direction, ct);
+        var image = pendingImage;
+        var translated = await translator.TranslateAsync(text, direction, ct, image);
         ct.ThrowIfCancellationRequested();
-        turns.Add(new(direction ? "Deutsch" : "日本語", direction ? "日本語" : "Deutsch", text, translated.Translation, translated.Romaji));
-        recording.Clear(); fromGerman = !direction; SetStatus(null);
+        if (image is not null)
+        {
+            if (translated.ImageText is { } imageText)
+                turns.Add(new(imageText.FromGerman ? "Deutsch" : "日本語", imageText.FromGerman ? "日本語" : "Deutsch", imageText.Original, imageText.Translation, imageText.Romaji, image));
+            else turns.Add(new("Bild", "", "", "Kein lesbarer Text im Bild erkannt.", "", image));
+        }
+        if (!string.IsNullOrWhiteSpace(text))
+            turns.Add(new(direction ? "Deutsch" : "日本語", direction ? "日本語" : "Deutsch", text, translated.Translation, translated.Romaji));
+        recording.Clear(); SetAttachment(null);
+        fromGerman = !string.IsNullOrWhiteSpace(text) ? !direction : translated.ImageText is { } detected ? !detected.FromGerman : direction;
+        SetStatus(null);
     }
 
     void FinishOperation() { operation?.Dispose(); operation = null; busy = false; UpdateControls(); ScrollToLatest(); }
@@ -357,7 +431,9 @@ public sealed class MainPage : ContentPage
         account.Text = auth.IsConnected ? "Verbunden · Deutsch ↔ 日本語" : "Deutsch ↔ 日本語";
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
         draft.IsReadOnly = busy && !pausingForEdit;
-        send.IsEnabled = !busy && !recording.IsRecording && auth.IsConnected && !string.IsNullOrWhiteSpace(draft.Text);
+        send.IsEnabled = !busy && !recording.IsRecording && auth.IsConnected && (!string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
+        attach.IsEnabled = !busy;
+        removeAttachment.IsEnabled = !busy;
         shutter.IsEnabled = !busy && auth.IsConnected;
         shutter.Text = !busy && recording.HasTurn ? "↑" : "";
         shutter.ImageSource = !busy && !recording.HasTurn ? ImageSource.FromFile("microphone.png") : null;
