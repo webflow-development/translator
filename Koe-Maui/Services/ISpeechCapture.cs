@@ -17,7 +17,7 @@ public sealed class UnsupportedSpeechCapture : ISpeechCapture
     public bool IsRecording => false;
     public event Action<string>? TranscriptChanged { add { } remove { } }
     public event Action<string?>? Stopped { add { } remove { } }
-    public Task StartAsync(CultureInfo culture) => throw new NotSupportedException("Diktat ist in dieser Version auf dem iPhone verfügbar. Bitte Text eingeben.");
+    public Task StartAsync(CultureInfo culture) => throw new NotSupportedException("Speech recognition is available on iPhone. Please type your message.");
     public Task<string> FinishAsync(CancellationToken cancellationToken = default) => Task.FromResult("");
     public void Stop() { }
 }

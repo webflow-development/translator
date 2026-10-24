@@ -33,11 +33,11 @@ public sealed class IosSpeechCapture : ISpeechCapture
             var authorization = new TaskCompletionSource<SFSpeechRecognizerAuthorizationStatus>();
             SFSpeechRecognizer.RequestAuthorization(value => authorization.TrySetResult(value));
             if (await authorization.Task != SFSpeechRecognizerAuthorizationStatus.Authorized)
-                throw new InvalidOperationException("Bitte erlaube Koe die Spracherkennung in den iPhone-Einstellungen.");
+                throw new InvalidOperationException("Please allow speech recognition for Koe in iPhone Settings.");
             if (await Permissions.RequestAsync<Permissions.Microphone>() != PermissionStatus.Granted)
-                throw new InvalidOperationException("Bitte erlaube Koe den Mikrofonzugriff in den iPhone-Einstellungen.");
+                throw new InvalidOperationException("Please allow microphone access for Koe in iPhone Settings.");
             recognizer = new SFSpeechRecognizer(NSLocale.FromLocaleIdentifier(culture.Name));
-            if (!recognizer.Available) throw new InvalidOperationException("Die Spracherkennung ist gerade nicht verfügbar.");
+            if (!recognizer.Available) throw new InvalidOperationException("Speech recognition is currently unavailable for this language.");
             var session = AVAudioSession.SharedInstance();
             session.SetCategory(AVAudioSessionCategory.Record, AVAudioSessionCategoryOptions.DuckOthers, out var categoryError);
             if (categoryError is not null) throw new InvalidOperationException(categoryError.LocalizedDescription);
@@ -51,7 +51,7 @@ public sealed class IosSpeechCapture : ISpeechCapture
             request = audioRequest;
             var input = engine.InputNode;
             using var format = input.GetBusOutputFormat(0);
-            if (format.SampleRate <= 0 || format.ChannelCount == 0) throw new InvalidOperationException("Kein Mikrofoneingang verfügbar.");
+            if (format.SampleRate <= 0 || format.ChannelCount == 0) throw new InvalidOperationException("No microphone input is available.");
             input.InstallTapOnBus(0, 1024, format, (buffer, _) => audioRequest.Append(buffer));
             tapInstalled = true;
             engine.Prepare();

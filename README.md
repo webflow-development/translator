@@ -1,3 +1,6 @@
+## Conversation languages
+
+The app interface is in English. Open **••• → Settings → Conversation languages** to select two different languages: English, Spanish, German, Japanese or Mandarin (Simplified Chinese). The default pair is English/Japanese and the selection is saved on the device. Speech recognition uses the active language; sending a message translates to the other selected language and switches speakers without starting the microphone. Image text is translated separately between the selected languages. Romaji is shown only for Japanese text.
 # Koe – .NET MAUI
 
 Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.

@@ -21,7 +21,7 @@ internal static class ResponseStream
                 case "response.output_text.delta": output.Append(root.GetProperty("delta").GetString()); break;
                 case "response.completed": return true;
                 case "response.failed": case "response.incomplete": case "error":
-                    throw new InvalidOperationException("OpenAI konnte die Übersetzung nicht vollständig abschließen. Bitte erneut versuchen.");
+                    throw new InvalidOperationException("The translation could not be completed. Please try again.");
             }
             return false;
         }
@@ -40,7 +40,7 @@ internal static class ResponseStream
     static string Finish(StringBuilder output)
     {
         var text = output.ToString().Trim();
-        if (text.Length == 0) throw new InvalidOperationException("Die Antwort enthält keine Übersetzung.");
+        if (text.Length == 0) throw new InvalidOperationException("The response contains no translation.");
         return text;
     }
 }

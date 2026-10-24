@@ -83,28 +83,28 @@ public sealed class ChatGptAuth(HttpClient http)
 #endif
         }
         finally { listener.Dispose(); }
-        if (callback.GetValueOrDefault("state") != state) throw new InvalidOperationException("Die Anmeldeantwort konnte nicht sicher zugeordnet werden.");
+        if (callback.GetValueOrDefault("state") != state) throw new InvalidOperationException("Could not securely validate the sign-in response.");
         if (callback.ContainsKey("error")) throw new InvalidOperationException("Die Anmeldung wurde abgelehnt oder abgebrochen.");
         var clientId = callback.GetValueOrDefault("client_id") ?? oldClientId;
         var code = callback.GetValueOrDefault("code");
         if (string.IsNullOrEmpty(clientId) || clientId == "dynamic_agent_client" || string.IsNullOrEmpty(code))
-            throw new InvalidOperationException("OpenAI hat keine vollständige Registrierung geliefert.");
-        if (oldClientId is not null && oldClientId != clientId) throw new InvalidOperationException("Die Anmeldung gehört zu einer anderen Registrierung.");
+            throw new InvalidOperationException("OpenAI returned an incomplete registration.");
+        if (oldClientId is not null && oldClientId != clientId) throw new InvalidOperationException("The sign-in belongs to a different registration.");
         var tokens = await PostTokensAsync(new()
         {
             ["grant_type"] = "authorization_code", ["client_id"] = clientId, ["code"] = code,
             ["code_verifier"] = verifier, ["redirect_uri"] = listener.RedirectUri, ["resource"] = Resource
         }, ct);
         var identity = await IdTokenValidator.ValidateAsync(http, tokens.IdToken, clientId, nonce, ct);
-        if (oldSubject is not null && identity.Subject != oldSubject) throw new InvalidOperationException("Die Anmeldung gehört zu einem anderen Konto.");
+        if (oldSubject is not null && identity.Subject != oldSubject) throw new InvalidOperationException("The sign-in belongs to a different account.");
         await SaveAsync(ToCredential(clientId, tokens, identity, previous));
     }
 
     public async Task<string> ValidAccessTokenAsync(CancellationToken ct)
     {
         await LoadAsync();
-        var credential = current ?? throw new InvalidOperationException("Bitte zuerst mit ChatGPT verbinden.");
-        if (!IsConnected) throw new InvalidOperationException("Die Freigabe für ChatGPT-Plan-Nutzung fehlt.");
+        var credential = current ?? throw new InvalidOperationException("Please connect ChatGPT first.");
+        if (!IsConnected) throw new InvalidOperationException("Permission to use the ChatGPT plan is missing.");
         if (credential.ExpiresAt > DateTimeOffset.UtcNow.AddSeconds(90)) return credential.AccessToken;
         var tokens = await PostTokensAsync(new()
         {
@@ -112,7 +112,7 @@ public sealed class ChatGptAuth(HttpClient http)
             ["refresh_token"] = credential.RefreshToken, ["resource"] = Resource
         }, ct);
         var identity = await IdTokenValidator.ValidateAsync(http, tokens.IdToken, credential.ClientId, null, ct);
-        if (identity.Subject != credential.Subject) throw new InvalidOperationException("Das erneuerte Token gehört zu einem anderen Konto.");
+        if (identity.Subject != credential.Subject) throw new InvalidOperationException("The refreshed token belongs to a different account.");
         var refreshed = ToCredential(credential.ClientId, tokens, identity, credential);
         await SaveAsync(refreshed);
         return refreshed.AccessToken;
@@ -138,14 +138,14 @@ public sealed class ChatGptAuth(HttpClient http)
         }
         catch
         {
-            throw new InvalidOperationException("Die Sitzung konnte online nicht widerrufen werden. Bitte erneut versuchen oder den Zugriff in ChatGPT unter Nutzung verwalten entfernen. Die lokale Anmeldung wurde gelöscht.");
+            throw new InvalidOperationException("Could not revoke the session online. Try again or remove access in ChatGPT under Manage usage. Local sign-in has been cleared.");
         }
         finally { SecureStorage.Default.Remove(StorageKey); current = null; }
     }
 
     async Task SaveAsync(Credential credential)
     {
-        if (!credential.Scopes.Contains("chatgpt.tokens.use.direct")) throw new InvalidOperationException("Die Freigabe für ChatGPT-Plan-Nutzung fehlt.");
+        if (!credential.Scopes.Contains("chatgpt.tokens.use.direct")) throw new InvalidOperationException("Permission to use the ChatGPT plan is missing.");
         await SecureStorage.Default.SetAsync(RegistrationKey, JsonSerializer.Serialize(new Registration(credential.ClientId, credential.Subject), KoeJsonContext.Default.Registration));
         await SecureStorage.Default.SetAsync(StorageKey, JsonSerializer.Serialize(credential, KoeJsonContext.Default.Credential));
         current = credential;
@@ -164,7 +164,7 @@ public sealed class ChatGptAuth(HttpClient http)
     {
         using var form = new FormUrlEncodedContent(values);
         using var response = await http.PostAsync("https://auth.openai.com/api/accounts/oauth/token", form, ct);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"Anmeldung konnte nicht erneuert werden (HTTP {(int)response.StatusCode}). Bitte erneut anmelden.");
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"Could not refresh sign-in (HTTP {(int)response.StatusCode}). Please sign in again.");
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var root = body.RootElement;
         return new(root.GetProperty("access_token").GetString()!, root.GetProperty("id_token").GetString()!,

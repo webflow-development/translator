@@ -12,7 +12,7 @@ public sealed class ImageAttachment
     public ImageAttachment(string name, byte[] bytes)
     {
         if (bytes.Length == 0) throw new InvalidOperationException("Die Bilddatei ist leer.");
-        if (bytes.Length > MaxImageBytes) throw new InvalidOperationException("Das Bild ist zu groß. Bitte ein kleineres Foto auswählen.");
+        if (bytes.Length > MaxImageBytes) throw new InvalidOperationException("The image is too large. Please choose a smaller photo.");
         MediaType = DetectMediaType(bytes);
         Name = name;
         Bytes = bytes;
@@ -25,7 +25,7 @@ public sealed class ImageAttachment
         int read;
         while ((read = await source.ReadAsync(buffer, ct)) > 0)
         {
-            if (destination.Length + read > MaxSourceBytes) throw new InvalidOperationException("Die Datei ist größer als 20 MB. Bitte ein kleineres Foto auswählen.");
+            if (destination.Length + read > MaxSourceBytes) throw new InvalidOperationException("The file exceeds 20 MB. Please choose a smaller photo.");
             destination.Write(buffer, 0, read);
         }
         if (destination.Length == 0) throw new InvalidOperationException("Die Bilddatei ist leer.");
@@ -37,6 +37,6 @@ public sealed class ImageAttachment
         if (bytes.Length >= 8 && bytes[..8].SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })) return "image/png";
         if (bytes.Length >= 3 && bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255) return "image/jpeg";
         if (bytes.Length >= 12 && bytes[..4].SequenceEqual("RIFF"u8) && bytes.Slice(8, 4).SequenceEqual("WEBP"u8)) return "image/webp";
-        throw new InvalidOperationException("Dieses Bildformat wird nicht unterstützt. Bitte ein JPG-, PNG- oder WebP-Bild auswählen.");
+        throw new InvalidOperationException("Unsupported image format. Please choose JPG, PNG or WebP.");
     }
 }

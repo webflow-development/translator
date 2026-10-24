@@ -41,5 +41,5 @@ internal static class IdTokenValidator
         var base64 = value.Replace('-', '+').Replace('_', '/');
         return Convert.FromBase64String(base64.PadRight((base64.Length + 3) / 4 * 4, '='));
     }
-    static InvalidOperationException InvalidToken() => new("Die Identität des ChatGPT-Kontos konnte nicht verifiziert werden.");
+    static InvalidOperationException InvalidToken() => new("Could not verify the ChatGPT account identity.");
 }

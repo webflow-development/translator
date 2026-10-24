@@ -154,7 +154,7 @@ await Check("Image media type comes from bytes, not an untrusted filename", () =
 });
 await Check("Image and spoken text are sent in the same Responses message", () =>
 {
-    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "Welches ist vegetarisch?", true, photo));
+    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "Welches ist vegetarisch?", ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"), photo));
     var root = request.RootElement;
     var content = root.GetProperty("input")[0].GetProperty("content");
     if (content.GetArrayLength() != 2 || content[0].GetProperty("text").GetString() != "Welches ist vegetarisch?" ||
@@ -164,18 +164,18 @@ await Check("Image and spoken text are sent in the same Responses message", () =
 });
 await Check("Image-only request does not fabricate a spoken message", () =>
 {
-    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "", false, photo));
+    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "", ConversationLanguage.Get("ja"), ConversationLanguage.Get("de"), photo));
     var content = request.RootElement.GetProperty("input")[0].GetProperty("content");
     if (content.GetArrayLength() != 1 || content[0].GetProperty("type").GetString() != "input_image") throw new Exception();
     return Task.CompletedTask;
 });
 await Check("Text-only requests contain no image payload", () =>
 {
-    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "Hallo", true));
+    using var request = JsonDocument.Parse(TranslationRequest.Build("test-model", "Hallo", ConversationLanguage.Get("de"), ConversationLanguage.Get("ja")));
     if (request.RootElement.GetProperty("input")[0].GetProperty("content").GetArrayLength() != 1) throw new Exception();
     return Task.CompletedTask;
 });
-await Check("Empty requests are rejected", () => Reject(() => { TranslationRequest.Build("test-model", " ", true); return Task.CompletedTask; }));
+await Check("Empty requests are rejected", () => Reject(() => { TranslationRequest.Build("test-model", " ", ConversationLanguage.Get("de"), ConversationLanguage.Get("ja")); return Task.CompletedTask; }));
 await Check("Renamed non-image files are rejected", () => Reject(() => { new ImageAttachment("fake.jpg", Encoding.UTF8.GetBytes("%PDF-1.7 document")); return Task.CompletedTask; }));
 await Check("Empty image files are rejected", () => Reject(() => { new ImageAttachment("empty.png", []); return Task.CompletedTask; }));
 await Check("Oversized image uploads are rejected before sending", () => Reject(() => { new ImageAttachment("large.png", new byte[ImageAttachment.MaxImageBytes + 1]); return Task.CompletedTask; }));
@@ -187,23 +187,52 @@ await Check("Source reading honors its size bound", async () =>
 await Check("Image OCR and speech translations retain independent directions", () =>
 {
     var json = """
-        {"translation":"どれがベジタリアン料理ですか？","romaji":"Dore ga bejitarian ryōri desu ka?","image_text_found":true,"image_from_german":false,"image_original":"野菜カレー","image_translation":"Gemüsecurry","image_romaji":"Yasai karē"}
+        {"translation":"どれがベジタリアン料理ですか？","romaji":"Dore ga bejitarian ryōri desu ka?","image_text_found":true,"image_source":"ja","image_target":"de","image_original":"野菜カレー","image_translation":"Gemüsecurry","image_romaji":"Yasai karē"}
         """;
     var result = TranslationResult.Parse(json, hasImage: true);
-    if (result.ImageText is not { FromGerman: false, Translation: "Gemüsecurry", Romaji: "Yasai karē" } || result.Translation != "どれがベジタリアン料理ですか？") throw new Exception();
+    if (result.ImageText is not { Source: "ja", Target: "de", Translation: "Gemüsecurry", Romaji: "Yasai karē" } || result.Translation != "どれがベジタリアン料理ですか？") throw new Exception();
     return Task.CompletedTask;
 });
 await Check("An image without legible text is represented without invented OCR", () =>
 {
-    var result = TranslationResult.Parse("{\"translation\":\"\",\"romaji\":\"\",\"image_text_found\":false,\"image_from_german\":false}", hasImage: true, hasText: false);
+    var result = TranslationResult.Parse("{\"translation\":\"\",\"romaji\":\"\",\"image_text_found\":false,\"image_source\":\"ja\",\"image_target\":\"de\"}", hasImage: true, hasText: false);
     if (result.ImageText is not null) throw new Exception();
     return Task.CompletedTask;
 });
 await Check("Missing image reading is rejected rather than dropping source text", () => Reject(() =>
 {
-    TranslationResult.Parse("{\"translation\":\"Danke\",\"romaji\":\"Arigatō\",\"image_text_found\":true,\"image_from_german\":false,\"image_original\":\"猫\",\"image_translation\":\"Katze\"}", hasImage: true);
+    TranslationResult.Parse("{\"translation\":\"Danke\",\"romaji\":\"Arigatō\",\"image_text_found\":true,\"image_source\":\"ja\",\"image_target\":\"de\",\"image_original\":\"猫\",\"image_translation\":\"Katze\"}", hasImage: true);
     return Task.CompletedTask;
 }));
+foreach (var source in ConversationLanguage.All)
+foreach (var target in ConversationLanguage.All.Where(x => x.Code != source.Code))
+await Check($"Language pair {source.Code} to {target.Code} configures translation", () =>
+{
+    using var request = JsonDocument.Parse(TranslationRequest.Build("test", "hello", source, target));
+    var instructions = request.RootElement.GetProperty("instructions").GetString()!;
+    if (!instructions.Contains($"from {source.Name} to {target.Name}")) throw new Exception();
+    if (string.IsNullOrWhiteSpace(System.Globalization.CultureInfo.GetCultureInfo(source.Culture).Name)) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Non-Japanese translation accepts empty romaji", () =>
+{
+    var result = TranslationResult.Parse("{\"translation\":\"Hola\",\"romaji\":\"\"}", requiresRomaji: false);
+    if (result.Translation != "Hola" || result.Romaji != "") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Same-language pairs are rejected", () => Reject(() =>
+{
+    TranslationRequest.Build("test", "hello", ConversationLanguage.Get("en"), ConversationLanguage.Get("en"));
+    return Task.CompletedTask;
+}));
+await Check("Mandarin image OCR accepts empty romaji", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"","romaji":"","image_text_found":true,"image_source":"zh","image_target":"en","image_original":"你好","image_translation":"Hello","image_romaji":""}
+    """, hasImage: true, hasText: false, requiresRomaji: false);
+    if (result.ImageText is not { Source: "zh", Target: "en", Translation: "Hello" }) throw new Exception();
+    return Task.CompletedTask;
+});
 await Check("Sending during recording waits for final words and leaves microphone off", async () =>
 {
     var speech = new FakeSpeech { FinalGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
