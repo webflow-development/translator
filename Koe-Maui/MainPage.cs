@@ -440,9 +440,15 @@ public sealed class MainPage : ContentPage
         SemanticProperties.SetDescription(shutter, recording.IsRecording ? "Aufnahme pausieren" : recording.HasTurn ? "Aufnahme fortsetzen" : "Aufnahme starten");
         prompt.Text = busy ? "Einen Moment …" : recording.IsRecording ? (fromGerman ? "Deutsch · sprich jetzt" : "日本語 · sprich jetzt") : recording.HasTurn ? "Aufnahme pausiert" : (fromGerman ? "Deutsch · bereit" : "日本語 · bereit");
         hint.Text = busy ? "Dein Satz wird verarbeitet." : recording.IsRecording ? "Mikrofon: Pause · ↑: senden" : recording.HasTurn ? "Links fortsetzen · rechts senden" : "Mikrofon: aufnehmen · ↑: senden";
-        german.BackgroundColor = fromGerman ? Color.FromArgb("#CBE2F3") : Colors.Transparent;
-        japanese.BackgroundColor = fromGerman ? Colors.Transparent : Color.FromArgb("#CBE2F3");
-        german.TextColor = fromGerman ? Ink : Muted; japanese.TextColor = fromGerman ? Muted : Ink;
+        var speakerGreen = Color.FromArgb("#D1EEDC");
+        var speakerInk = Color.FromArgb("#205C3B");
+        german.BackgroundColor = fromGerman ? speakerGreen : Colors.Transparent;
+        japanese.BackgroundColor = fromGerman ? Colors.Transparent : speakerGreen;
+        german.Text = fromGerman ? "🎙 Deutsch" : "Deutsch";
+        japanese.Text = fromGerman ? "日本語" : "🎙 日本語";
+        german.TextColor = fromGerman ? speakerInk : Muted; japanese.TextColor = fromGerman ? Muted : speakerInk;
+        SemanticProperties.SetDescription(german, fromGerman ? "Deutsch, aktiver Gesprächspartner" : "Deutsch auswählen");
+        SemanticProperties.SetDescription(japanese, fromGerman ? "Japanisch auswählen" : "Japanisch, aktiver Gesprächspartner");
         german.IsEnabled = japanese.IsEnabled = !busy && !recording.HasTurn;
         cancel.IsVisible = busy;
         progress.IsRunning = busy; progress.IsVisible = busy;
