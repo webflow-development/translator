@@ -65,6 +65,8 @@ public sealed class MainPage : ContentPage
         if (first.Code == second.Code) second = ConversationLanguage.Get(first.Code == "ja" ? "en" : "ja");
         this.auth = auth; this.translator = translator; recording = new SpeechDraft(speech);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
+        // Resize the whole chat above the keyboard, including the composer and send button.
+        SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
         var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 48, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Conversation options");
         menu.Clicked += async (_, _) => await ShowMenuAsync();
@@ -110,6 +112,7 @@ public sealed class MainPage : ContentPage
         var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, attachmentCard, inputBorder, turnCaption, turnControls, cancel, status } };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
         root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(composer, 0, 3);
+        root.SizeChanged += (_, _) => ScrollToLatest();
         Content = root;
         SemanticProperties.SetDescription(send, "Send message, translate and switch speakers");
         SemanticProperties.SetDescription(attach, "Choose a photo, camera or image file");
