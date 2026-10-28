@@ -244,6 +244,29 @@ await Check("Sending during recording waits for final words and leaves microphon
     speech.FinalGate.SetResult("Ein Wasser ohne Eis bitte.");
     if (await finishing != "Ein Wasser ohne Eis bitte." || draft.HasTurn || speech.IsRecording || speech.StartCount != 1) throw new Exception();
 });
+await Check("Silence updates and automatic stop preserve a long draft", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    var culture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+    await draft.StartAsync(culture);
+    const string sentence = "We would like to book a table for tomorrow evening and sit outside if possible.";
+    speech.Emit(sentence); speech.Emit(""); speech.Emit("   ");
+    if (draft.Text != sentence || !draft.IsRecording) throw new Exception("Silence erased the partial draft.");
+    speech.Stop();
+    if (draft.Text != sentence || draft.State != RecordingState.Paused) throw new Exception("Automatic stop lost the draft.");
+    await draft.StartAsync(culture); speech.Emit("For four people.");
+    if (await draft.FinishAsync() != sentence + " For four people.") throw new Exception("Resume lost the preceding segment.");
+});
+await Check("An empty final recognition result keeps the latest partial and preceding segment", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    var culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    draft.Edit("Vorheriger Satz.");
+    await draft.StartAsync(culture); speech.Emit("Bitte diesen Satz ebenfalls behalten.");
+    speech.FinalText = "";
+    var text = await draft.FinishAsync();
+    if (text != "Vorheriger Satz. Bitte diesen Satz ebenfalls behalten." || speech.IsRecording) throw new Exception(text);
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

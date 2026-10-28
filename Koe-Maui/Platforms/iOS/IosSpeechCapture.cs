@@ -62,7 +62,8 @@ public sealed class IosSpeechCapture : ISpeechCapture
             task = recognizer.GetRecognitionTask(audioRequest, (result, error) => MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (currentGeneration != generation) return;
-                if (result is not null)
+                // Keep the latest useful partial when iOS ends a segment with an empty result.
+                if (result is not null && !string.IsNullOrWhiteSpace(result.BestTranscription.FormattedString))
                 {
                     transcript = result.BestTranscription.FormattedString;
                     TranscriptChanged?.Invoke(transcript);

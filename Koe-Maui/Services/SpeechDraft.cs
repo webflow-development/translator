@@ -25,7 +25,8 @@ public sealed class SpeechDraft
         this.speech = speech;
         speech.TranscriptChanged += transcript =>
         {
-            if (!acceptingTranscript || !IsRecording) return;
+            // Silence can produce an empty update; it is not a request to erase the draft.
+            if (!acceptingTranscript || !IsRecording || string.IsNullOrWhiteSpace(transcript)) return;
             Text = Join(prefix, transcript);
             Changed?.Invoke();
         };
@@ -83,7 +84,7 @@ public sealed class SpeechDraft
         {
             var final = await speech.FinishAsync(ct);
             // A final recognizer callback must never undo a correction made in the editor.
-            if (!segmentEdited && revision == editRevision) Text = Join(prefix, final);
+            if (!segmentEdited && revision == editRevision && !string.IsNullOrWhiteSpace(final)) Text = Join(prefix, final);
         }
         finally
         {
