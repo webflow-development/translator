@@ -1,5 +1,7 @@
 ## Conversation languages
 
+Translation responses appear progressively in a temporary preview, then become chat messages only after the complete response has been validated. Cancelling or failing a request removes the preview and retains the original draft and attachment. The selected model is cached in memory for 30 minutes, scoped to the current credential and cleared after access/model errors; subsequent sends avoid fetching the model catalog again.
+
 The app interface is in English. Open **••• → Settings → Conversation languages** to select two different languages: English, Spanish, German, Japanese or Mandarin (Simplified Chinese). The default pair is English/Japanese and the selection is saved on the device. Speech recognition uses the active language; sending a message translates to the other selected language and switches speakers without starting the microphone. Image text is translated separately between the selected languages. Romaji is shown only for Japanese text.
 # Koe – .NET MAUI
 

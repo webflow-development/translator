@@ -267,6 +267,60 @@ await Check("An empty final recognition result keeps the latest partial and prec
     var text = await draft.FinishAsync();
     if (text != "Vorheriger Satz. Bitte diesen Satz ebenfalls behalten." || speech.IsRecording) throw new Exception(text);
 });
+await Check("Model catalog is reused, expires and is scoped to credentials", async () =>
+{
+    var time = DateTimeOffset.UtcNow; var cache = new ModelSelectionCache(() => time); var calls = 0;
+    Task<string> Load() { calls++; return Task.FromResult("model-" + calls); }
+    if (await cache.GetAsync("account-a", Load, default) != "model-1" || await cache.GetAsync("account-a", Load, default) != "model-1" || calls != 1) throw new Exception();
+    if (await cache.GetAsync("account-b", Load, default) != "model-2") throw new Exception();
+    time = time.AddMinutes(31);
+    if (await cache.GetAsync("account-b", Load, default) != "model-3") throw new Exception();
+    cache.Clear();
+    if (await cache.GetAsync("account-b", Load, default) != "model-4") throw new Exception();
+});
+await Check("Concurrent catalog lookups share the selected model", async () =>
+{
+    var cache = new ModelSelectionCache(); var calls = 0;
+    var gate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+    Task<string> Load() { calls++; return gate.Task; }
+    var first = cache.GetAsync("account", Load, default);
+    var second = cache.GetAsync("account", Load, default);
+    gate.SetResult("shared");
+    var values = await Task.WhenAll(first, second);
+    if (calls != 1 || values.Any(x => x != "shared")) throw new Exception();
+});
+await Check("Failed catalog fetch is not cached", async () =>
+{
+    var cache = new ModelSelectionCache();
+    await Reject(async () => await cache.GetAsync("a", () => throw new InvalidOperationException(), default));
+    if (await cache.GetAsync("a", () => Task.FromResult("recovered"), default) != "recovered") throw new Exception();
+});
+await Check("JSON preview decodes every prefix without exposing syntax or split escapes", () =>
+{
+    const string expected = "Hello \"world\"\nこんにちは 😀";
+    var json = JsonSerializer.Serialize(new { translation = expected, romaji = "test", image_translation = "Image text" });
+    for (var length = 0; length <= json.Length; length++)
+    {
+        var preview = TranslationPreview.Read(json[..length]);
+        if (!expected.StartsWith(preview.Text, StringComparison.Ordinal) || "Image text".StartsWith(preview.ImageText, StringComparison.Ordinal) == false) throw new Exception(preview.Text);
+        if (preview.Text.Length > 0 && char.IsHighSurrogate(preview.Text[^1])) throw new Exception("Split surrogate exposed.");
+    }
+    if (TranslationPreview.Read(json) != new TranslationPreview(expected, "Image text")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Preview does not mistake escaped property names inside text for fields", () =>
+{
+    var json = JsonSerializer.Serialize(new { other = "\"translation\":\"wrong\"", translation = "right" });
+    if (TranslationPreview.Read(json).Text != "right") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Streaming exposes partial text before completion but rejects interrupted replies", async () =>
+{
+    var updates = new List<string>();
+    var delta = "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta = "{\"translation\":\"Hello" }) + "\n\n";
+    await Reject(async () => await ResponseStream.ReadAsync(new StringReader(delta), default, partial => updates.Add(TranslationPreview.Read(partial).Text)));
+    if (updates.Count != 1 || updates[0] != "Hello") throw new Exception();
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

@@ -5,7 +5,7 @@ namespace Koe.Services;
 
 internal static class ResponseStream
 {
-    public static async Task<string> ReadAsync(TextReader reader, CancellationToken ct)
+    public static async Task<string> ReadAsync(TextReader reader, CancellationToken ct, Action<string>? onPartial = null)
     {
         var output = new StringBuilder();
         var data = new List<string>();
@@ -18,7 +18,10 @@ internal static class ResponseStream
             var root = document.RootElement;
             switch (root.GetProperty("type").GetString())
             {
-                case "response.output_text.delta": output.Append(root.GetProperty("delta").GetString()); break;
+                case "response.output_text.delta":
+                    output.Append(root.GetProperty("delta").GetString());
+                    onPartial?.Invoke(output.ToString());
+                    break;
                 case "response.completed": return true;
                 case "response.failed": case "response.incomplete": case "error":
                     throw new InvalidOperationException("The translation could not be completed. Please try again.");
@@ -34,7 +37,7 @@ internal static class ResponseStream
             else if (line.StartsWith("data:", StringComparison.Ordinal)) data.Add(line[5..].TrimStart(' '));
         }
         if (HandleEvent()) return Finish(output);
-        throw new InvalidOperationException("Die Übersetzung wurde vor dem Abschluss unterbrochen.");
+        throw new InvalidOperationException("The translation was interrupted before completion.");
     }
 
     static string Finish(StringBuilder output)

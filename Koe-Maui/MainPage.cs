@@ -23,6 +23,8 @@ public sealed class MainPage : ContentPage
     readonly OpenAiTranslator translator;
     readonly SpeechDraft recording;
     readonly ObservableCollection<ConversationTurn> turns = [];
+    readonly Label liveTranslation = new() { TextColor = Ink, FontSize = 18, LineHeight = 1.15 };
+    readonly Border livePreview;
     readonly CollectionView messages;
     int scrollRevision;
     string textSize = Preferences.Default.Get("koe.text-size", "Mittel");
@@ -110,8 +112,19 @@ public sealed class MainPage : ContentPage
         turnControls.Add(send, 1, 0);
         cancel.HorizontalOptions = LayoutOptions.Center;
         var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, attachmentCard, inputBorder, turnCaption, turnControls, cancel, status } };
-        var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
-        root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(composer, 0, 3);
+        liveTranslation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
+        livePreview = new Border
+        {
+            IsVisible = false, Margin = new Thickness(18, 4), Padding = 12, StrokeThickness = 0,
+            BackgroundColor = Colors.White, StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Content = new VerticalStackLayout { Spacing = 4, Children =
+            {
+                new Label { Text = "Translating · preview", FontSize = 11, TextColor = Muted },
+                new ScrollView { MaximumHeightRequest = 120, Content = liveTranslation }
+            } }
+        };
+        var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) } };
+        root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(livePreview, 0, 3); root.Add(composer, 0, 4);
         root.SizeChanged += (_, _) => ScrollToLatest();
         Content = root;
         SemanticProperties.SetDescription(send, "Send message, translate and switch speakers");
@@ -426,7 +439,26 @@ public sealed class MainPage : ContentPage
         SetStatus("Translating …");
         var direction = fromFirst;
         var image = pendingImage;
-        var translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image);
+        var closed = false;
+        var scheduled = false;
+        var latest = new TranslationPreview("", "");
+        void Preview(TranslationPreview preview) => MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (closed || ct.IsCancellationRequested || !pageVisible) return;
+            latest = preview;
+            if (scheduled) return;
+            scheduled = true;
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(80), () =>
+            {
+                scheduled = false;
+                if (closed || ct.IsCancellationRequested || !pageVisible) return;
+                liveTranslation.Text = string.Join("\n\n", new[] { latest.Text, latest.ImageText }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                livePreview.IsVisible = !string.IsNullOrWhiteSpace(liveTranslation.Text);
+            });
+        });
+        TranslationResult translated;
+        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview); }
+        finally { closed = true; livePreview.IsVisible = false; liveTranslation.Text = ""; }
         ct.ThrowIfCancellationRequested();
         if (image is not null)
         {
