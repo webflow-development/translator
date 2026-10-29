@@ -4,6 +4,31 @@ namespace Koe.Services;
 
 public sealed record ConversationLanguage(string Code, string Name, string Culture)
 {
+    public string Greeting => Code switch
+    {
+        "en" => "Hello!", "de" => "Hallo!", "es" => "¡Hola!", "fr" => "Bonjour !",
+        "it" => "Ciao!", "pt" => "Olá!", "nl" => "Hallo!", "ja" => "こんにちは！",
+        "zh" => "你好！", "yue" => "你好！", "ko" => "안녕하세요!", "vi" => "Xin chào!",
+        "th" => "สวัสดี!", "id" => "Halo!", "ms" => "Helo!", "fil" or "tl" => "Kumusta!",
+        "ar" => "مرحبًا!", "he" => "שלום!", "fa" => "سلام!", "ur" => "سلام!",
+        "hi" => "नमस्ते!", "bn" => "নমস্কার!", "ta" => "வணக்கம்!", "te" => "నమస్కారం!",
+        "kn" => "ನಮಸ್ಕಾರ!", "ml" => "നമസ്കാരം!", "mr" => "नमस्कार!", "gu" => "નમસ્તે!",
+        "pa" => "ਸਤ ਸ੍ਰੀ ਅਕਾਲ!", "ne" => "नमस्ते!", "si" => "ආයුබෝවන්!",
+        "ru" => "Здравствуйте!", "uk" => "Вітаю!", "pl" => "Cześć!", "cs" => "Ahoj!",
+        "sk" => "Ahoj!", "sl" => "Živjo!", "hr" or "bs" => "Bok!", "sr" => "Здраво!",
+        "bg" => "Здравейте!", "mk" => "Здраво!", "ro" => "Salut!", "hu" => "Szia!",
+        "el" => "Γεια σας!", "tr" => "Merhaba!", "az" => "Salam!", "uz" => "Salom!",
+        "kk" => "Сәлеметсіз бе!", "sv" or "da" => "Hej!", "nb" or "nn" or "no" => "Hei!",
+        "fi" => "Hei!", "is" => "Halló!", "et" => "Tere!", "lv" => "Sveiki!",
+        "lt" => "Labas!", "ca" => "Hola!", "eu" => "Kaixo!", "gl" => "Ola!",
+        "cy" => "Helo!", "ga" => "Dia duit!", "af" => "Hallo!", "sw" => "Habari!",
+        "hy" => "Բարև!", "ka" => "გამარჯობა!", "sq" => "Përshëndetje!",
+        "km" => "សួស្តី!", "lo" => "ສະບາຍດີ!", "my" => "မင်္ဂလာပါ!",
+        "mn" => "Сайн байна уу!", "be" => "Вітаю!", "am" => "ሰላም!",
+        "so" => "Salaan!", "zu" => "Sawubona!", "jv" => "Sugeng rawuh!", "su" => "Sampurasun!",
+        _ => "👋 " + CultureInfo.GetCultureInfo(Culture).NativeName
+    };
+
     static readonly ConversationLanguage[] Defaults =
     [
         new("en", "English", "en-US"), new("es", "Spanish", "es-ES"),

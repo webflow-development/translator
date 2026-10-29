@@ -27,6 +27,8 @@ public sealed class MainPage : ContentPage
     readonly Label liveTranslation = new() { TextColor = Ink, FontSize = 18, LineHeight = 1.15 };
     readonly Border livePreview;
     readonly CollectionView messages;
+    readonly Label firstGreeting = new() { FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Blue, HorizontalTextAlignment = TextAlignment.Center };
+    readonly Label secondGreeting = new() { FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Blue, HorizontalTextAlignment = TextAlignment.Center };
     int scrollRevision;
     string textSize = Preferences.Default.Get("koe.text-size", "Mittel");
     bool showTransliteration = Preferences.Default.Get("koe.show-transliteration", Preferences.Default.Get("koe.show-romaji", true));
@@ -88,7 +90,7 @@ public sealed class MainPage : ContentPage
             ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepLastItemInView,
             EmptyView = new VerticalStackLayout { Padding = new Thickness(30, 42), Spacing = 12, Children =
             {
-                new Label { Text = "Hello.  こんにちは。", FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Blue, HorizontalTextAlignment = TextAlignment.Center },
+                firstGreeting, secondGreeting,
                 new Label { Text = "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.", FontSize = 15, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, LineHeight = 1.2 }
             } },
             ItemTemplate = new DataTemplate(CreateBubble)
@@ -552,6 +554,8 @@ public sealed class MainPage : ContentPage
 
     void UpdateControls()
     {
+        firstGreeting.Text = first.Greeting;
+        secondGreeting.Text = second.Greeting;
         account.Text = (auth.IsConnected ? "Connected · " : "") + $"{first.Name} ↔ {second.Name}";
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
