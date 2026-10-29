@@ -64,7 +64,7 @@ public sealed class MainPage : ContentPage
 
     public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech)
     {
-        if (first.Code == second.Code) second = ConversationLanguage.Get(first.Code == "ja" ? "en" : "ja");
+        if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
         this.auth = auth; this.translator = translator; recording = new SpeechDraft(speech);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
@@ -346,16 +346,61 @@ public sealed class MainPage : ContentPage
 
     async Task ShowLanguagesAsync()
     {
-        var firstChoice = await DisplayActionSheetAsync("First speaker's language", "Cancel", null, ConversationLanguage.All.Select(x => x.Name).ToArray());
-        var selectedFirst = ConversationLanguage.All.FirstOrDefault(x => x.Name == firstChoice);
+        var selectedFirst = await PickLanguageAsync("First speaker's language", ConversationLanguage.All);
         if (selectedFirst is null) return;
-        var secondChoice = await DisplayActionSheetAsync("Second speaker's language", "Cancel", null, ConversationLanguage.All.Where(x => x.Code != selectedFirst.Code).Select(x => x.Name).ToArray());
-        var selectedSecond = ConversationLanguage.All.FirstOrDefault(x => x.Name == secondChoice);
+        var selectedSecond = await PickLanguageAsync("Second speaker's language", ConversationLanguage.All.Where(x => x.Code != selectedFirst.Code).ToArray());
         if (selectedSecond is null) return;
         first = selectedFirst; second = selectedSecond; fromFirst = true;
         Preferences.Default.Set("koe.language.first", first.Code);
         Preferences.Default.Set("koe.language.second", second.Code);
         UpdateControls();
+    }
+
+    async Task<ConversationLanguage?> PickLanguageAsync(string title, ConversationLanguage[] choices)
+    {
+        var completion = new TaskCompletionSource<ConversationLanguage?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var closing = false;
+        var search = new SearchBar { Placeholder = "Search languages", BackgroundColor = Colors.White };
+        var list = new CollectionView
+        {
+            ItemsSource = choices, SelectionMode = SelectionMode.Single,
+            ItemTemplate = new DataTemplate(() =>
+            {
+                var name = new Label { FontSize = 18, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center };
+                name.SetBinding(Label.TextProperty, nameof(ConversationLanguage.Name));
+                return new Grid { Padding = new Thickness(18, 14), MinimumHeightRequest = 52, Children = { name } };
+            })
+        };
+        var close = new Button { Text = "Cancel", TextColor = Blue, BackgroundColor = Colors.Transparent };
+        var heading = new Grid { Padding = new Thickness(16, 8), ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        heading.Add(new Label { Text = title, FontSize = 20, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        heading.Add(close, 1, 0);
+        var content = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) } };
+        content.Add(heading, 0, 0); content.Add(search, 0, 1);
+        content.Add(new Label { Text = $"{choices.Length} languages · Some require an internet connection", TextColor = Muted, FontSize = 12, Margin = new Thickness(18, 4) }, 0, 2);
+        content.Add(list, 0, 3);
+        var page = new ContentPage { Title = title, SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All, BackgroundColor = Color.FromArgb("#F0F6FA"), Content = content };
+        async Task CloseAsync(ConversationLanguage? selected)
+        {
+            if (closing) return;
+            closing = true;
+            search.Unfocus();
+            await Navigation.PopModalAsync();
+            completion.TrySetResult(selected);
+        }
+        close.Clicked += async (_, _) => await CloseAsync(null);
+        list.SelectionChanged += async (_, args) =>
+        {
+            if (args.CurrentSelection.FirstOrDefault() is ConversationLanguage selected) await CloseAsync(selected);
+        };
+        search.TextChanged += (_, args) =>
+        {
+            var query = args.NewTextValue?.Trim() ?? "";
+            list.ItemsSource = choices.Where(x => x.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || x.Code.Contains(query, StringComparison.OrdinalIgnoreCase) || CultureInfo.GetCultureInfo(x.Culture).NativeName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        };
+        page.Disappearing += (_, _) => { if (!closing) completion.TrySetResult(null); };
+        await Navigation.PushModalAsync(page);
+        return await completion.Task;
     }
 
     async Task ShowTextSizeAsync()

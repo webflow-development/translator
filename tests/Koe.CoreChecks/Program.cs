@@ -321,6 +321,29 @@ await Check("Streaming exposes partial text before completion but rejects interr
     await Reject(async () => await ResponseStream.ReadAsync(new StringReader(delta), default, partial => updates.Add(TranslationPreview.Read(partial).Text)));
     if (updates.Count != 1 || updates[0] != "Hello") throw new Exception();
 });
+await Check("Speech language discovery normalizes, filters and deduplicates supported locales", () =>
+{
+    var languages = ConversationLanguage.FromSpeechLocales(["fr_FR", "fr-CA", "en_GB", "en-US", "ja-JP", "vi-VN", "th-TH", "ko-KR", "de-DE", "es-ES", "zh-CN", "en", ""]);
+    if (languages.Length != 9 || languages.Select(x => x.Code).Distinct().Count() != languages.Length) throw new Exception();
+    if (languages.Single(x => x.Code == "en").Culture != "en-US" || languages.Single(x => x.Code == "zh").Name != "Mandarin") throw new Exception();
+    foreach (var code in new[] { "fr", "vi", "th", "ko" })
+        if (!languages.Any(x => x.Code == code)) throw new Exception(code);
+    if (!languages.Select(x => x.Name).SequenceEqual(languages.Select(x => x.Name).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))) throw new Exception("Not sorted.");
+    return Task.CompletedTask;
+});
+await Check("Only languages in the supplied speech catalog are offered", () =>
+{
+    var languages = ConversationLanguage.FromSpeechLocales(["fr-FR", "it-IT"]);
+    if (languages.Length != 2 || languages.Any(x => x.Code is not ("fr" or "it"))) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("New image language directions use the selected pair", () =>
+{
+    using var payload = JsonDocument.Parse(TranslationRequest.Build("test", "bonjour", new("fr", "French", "fr-FR"), new("vi", "Vietnamese", "vi-VN"), photo));
+    var instruction = payload.RootElement.GetProperty("instructions").GetString()!;
+    if (!instruction.Contains("from French to Vietnamese") || !instruction.Contains("fr or vi") || instruction.Contains("en, es, de, ja or zh")) throw new Exception();
+    return Task.CompletedTask;
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler
