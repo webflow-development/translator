@@ -521,7 +521,7 @@ public sealed class MainPage : ContentPage
             else turns.Add(new("Image", "", "", "No legible text found in the image.", "", "", image));
         }
         if (!string.IsNullOrWhiteSpace(text))
-            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, text, translated.Translation, translated.SourceTransliteration, translated.TargetTransliteration, null, direction));
+            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, translated.CorrectedOriginal, translated.Translation, translated.SourceTransliteration, translated.TargetTransliteration, null, direction));
         recording.Clear(); SetAttachment(null);
         fromFirst = !string.IsNullOrWhiteSpace(text) ? !direction : translated.ImageText is { } detected ? detected.Source != first.Code : direction;
         SetStatus(null);

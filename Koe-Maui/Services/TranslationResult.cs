@@ -4,19 +4,20 @@ namespace Koe.Services;
 
 public sealed record ImageTextTranslation(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration);
 
-public sealed record TranslationResult(string Translation, string SourceTransliteration, string TargetTransliteration, ImageTextTranslation? ImageText = null)
+public sealed record TranslationResult(string Translation, string SourceTransliteration, string TargetTransliteration, string CorrectedOriginal, ImageTextTranslation? ImageText = null)
 {
     internal const string ImageSchema = """
     {
       "type":"object",
       "properties":{
         "translation":{"type":"string"},
+        "corrected_original":{"type":"string"},
         "source_transliteration":{"type":"string"}, "target_transliteration":{"type":"string"},
         "image_text_found":{"type":"boolean"}, "image_source":{"type":"string"}, "image_target":{"type":"string"},
         "image_original":{"type":"string"}, "image_translation":{"type":"string"},
         "image_source_transliteration":{"type":"string"}, "image_target_transliteration":{"type":"string"}
       },
-      "required":["translation","source_transliteration","target_transliteration","image_text_found","image_source","image_target","image_original","image_translation","image_source_transliteration","image_target_transliteration"],
+      "required":["translation","corrected_original","source_transliteration","target_transliteration","image_text_found","image_source","image_target","image_original","image_translation","image_source_transliteration","image_target_transliteration"],
       "additionalProperties":false
     }
     """;
@@ -25,10 +26,11 @@ public sealed record TranslationResult(string Translation, string SourceTranslit
       "type":"object",
       "properties":{
         "translation":{"type":"string"},
+        "corrected_original":{"type":"string"},
         "source_transliteration":{"type":"string"},
         "target_transliteration":{"type":"string"}
       },
-      "required":["translation","source_transliteration","target_transliteration"],
+      "required":["translation","corrected_original","source_transliteration","target_transliteration"],
       "additionalProperties":false
     }
     """;
@@ -41,6 +43,7 @@ public sealed record TranslationResult(string Translation, string SourceTranslit
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) throw InvalidResponse();
             var translation = ReadText(root, "translation", hasText);
+            var correctedOriginal = ReadText(root, "corrected_original", hasText);
             var sourceReading = ReadText(root, "source_transliteration", false);
             var targetReading = ReadText(root, "target_transliteration", false);
             ImageTextTranslation? imageText = null;
@@ -57,7 +60,7 @@ public sealed record TranslationResult(string Translation, string SourceTranslit
                     imageText = new(source, target, ReadText(root, "image_original"), ReadText(root, "image_translation"), includeTransliteration ? originalReading : "", includeTransliteration ? translatedReading : "");
                 }
             }
-            return new(translation, includeTransliteration ? sourceReading : "", includeTransliteration ? targetReading : "", imageText);
+            return new(translation, includeTransliteration ? sourceReading : "", includeTransliteration ? targetReading : "", correctedOriginal, imageText);
         }
         catch (JsonException) { throw InvalidResponse(); }
     }

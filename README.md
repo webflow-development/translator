@@ -1,3 +1,6 @@
+## Grammar correction on send
+
+Spoken and typed messages are lightly corrected for grammar, spelling and punctuation within the same translation request. The corrected input is displayed and copied as the original-language message, and its transliteration matches that corrected text. Instructions preserve meaning, tone, names, negation, numbers and facts and retain ambiguous wording rather than guessing. Image OCR remains a faithful transcript. No extra API request is added, although returning the corrected text adds output. Correction quality requires real-device testing. On failure or cancellation the unmodified editable draft is retained unless explicitly discarded.
 ## Current input
 
 The red **× Discard input** button stops recording, cancels an in-progress translation and deletes the current editable draft and attachment. Existing translated chat messages and the selected speaker remain unchanged. Late recognition results cannot restore discarded text. **Cancel** remains available for operations without a draft, such as signing in.
