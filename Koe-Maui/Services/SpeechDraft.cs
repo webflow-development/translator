@@ -13,6 +13,7 @@ public sealed class SpeechDraft
     bool transitioning;
     bool segmentEdited;
     int editRevision;
+    int resetRevision;
     public string Text { get; private set; } = "";
     public RecordingState State { get; private set; }
     public bool HasTurn => State != RecordingState.Ready;
@@ -53,6 +54,7 @@ public sealed class SpeechDraft
         if (transitioning || IsRecording) return;
         ct.ThrowIfCancellationRequested();
         var previousState = State;
+        var reset = resetRevision;
         transitioning = true;
         prefix = Text.TrimEnd();
         segmentEdited = false;
@@ -62,13 +64,14 @@ public sealed class SpeechDraft
         {
             await speech.StartAsync(culture);
             ct.ThrowIfCancellationRequested();
+            if (reset != resetRevision) { speech.Stop(); State = RecordingState.Ready; return; }
             if (!speech.IsRecording) { acceptingTranscript = false; State = RecordingState.Paused; }
         }
         catch
         {
             acceptingTranscript = false;
             speech.Stop();
-            State = previousState;
+            State = reset == resetRevision ? previousState : RecordingState.Ready;
             throw;
         }
         finally { transitioning = false; Changed?.Invoke(); }
@@ -80,6 +83,7 @@ public sealed class SpeechDraft
         transitioning = true;
         acceptingTranscript = false;
         var revision = editRevision;
+        var reset = resetRevision;
         try
         {
             var final = await speech.FinishAsync(ct);
@@ -89,7 +93,7 @@ public sealed class SpeechDraft
         finally
         {
             speech.Stop();
-            State = RecordingState.Paused;
+            State = reset == resetRevision ? RecordingState.Paused : RecordingState.Ready;
             transitioning = false;
             Changed?.Invoke();
         }
@@ -117,8 +121,11 @@ public sealed class SpeechDraft
     public void Clear()
     {
         acceptingTranscript = false;
+        resetRevision++;
+        editRevision++;
+        segmentEdited = true;
+        speech.Stop();
         Text = prefix = "";
-        segmentEdited = false;
         State = RecordingState.Ready;
         Changed?.Invoke();
     }

@@ -46,7 +46,7 @@ public sealed class MainPage : ContentPage
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     readonly Button send = new() { Text = "↑", FontSize = 30, WidthRequest = 56, HeightRequest = 56, CornerRadius = 28, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.Center };
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
-    readonly Button cancel = new() { Text = "Cancel", FontSize = 13, BackgroundColor = Colors.Transparent, TextColor = Muted, IsVisible = false, Padding = new Thickness(6, 4) };
+    readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted };
@@ -57,6 +57,7 @@ public sealed class MainPage : ContentPage
     readonly Border shutterRing;
     CancellationTokenSource? operation;
     bool busy, pageVisible, syncingDraft, pausingForEdit;
+    bool discardingInput;
     bool fromFirst = true;
     ConversationLanguage first = ConversationLanguage.Get(Preferences.Default.Get("koe.language.first", "en"));
     ConversationLanguage second = ConversationLanguage.Get(Preferences.Default.Get("koe.language.second", "ja"));
@@ -136,7 +137,12 @@ public sealed class MainPage : ContentPage
         connect.Clicked += async (_, _) => await ConnectAsync();
         shutter.Clicked += async (_, _) => await TogglePauseAsync();
         send.Clicked += async (_, _) => await SendTextAsync();
-        cancel.Clicked += (_, _) => operation?.Cancel();
+        SemanticProperties.SetDescription(cancel, "Stop and delete the current input and attached image");
+        cancel.Clicked += (_, _) =>
+        {
+            if (recording.HasTurn || !string.IsNullOrWhiteSpace(recording.Text) || pendingImage is not null) DiscardInput();
+            else operation?.Cancel();
+        };
         firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromFirst = true; UpdateControls(); } };
         secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromFirst = false; UpdateControls(); } };
         draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
@@ -280,7 +286,7 @@ public sealed class MainPage : ContentPage
     {
         if (busy) return;
         draft.Unfocus();
-        busy = true; pickingAttachment = true; operation = new CancellationTokenSource(); UpdateControls();
+        discardingInput = false; busy = true; pickingAttachment = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             if (recording.IsRecording) await recording.PauseAsync(operation.Token);
@@ -421,7 +427,7 @@ public sealed class MainPage : ContentPage
     async Task ConnectAsync()
     {
         if (busy || recording.HasTurn) return;
-        busy = true; operation = new CancellationTokenSource(); UpdateControls();
+        discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             if (auth.IsConnected) { await auth.SignOutAsync(operation.Token); SetStatus("Signed out."); }
@@ -435,7 +441,7 @@ public sealed class MainPage : ContentPage
     async Task TogglePauseAsync()
     {
         if (busy || !auth.IsConnected) return;
-        busy = true; operation = new CancellationTokenSource(); UpdateControls();
+        discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             if (recording.IsRecording)
@@ -467,7 +473,7 @@ public sealed class MainPage : ContentPage
     {
         if (busy || !auth.IsConnected || (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null)) return;
         draft.Unfocus();
-        busy = true; operation = new CancellationTokenSource(); UpdateControls();
+        discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             var text = (await recording.FinishAsync(operation.Token)).Trim();
@@ -519,14 +525,36 @@ public sealed class MainPage : ContentPage
         SetStatus(null);
     }
 
-    void FinishOperation() { operation?.Dispose(); operation = null; busy = false; UpdateControls(); ScrollToLatest(); }
+    void DiscardInput()
+    {
+        discardingInput = true;
+        operation?.Cancel();
+        recording.Clear();
+        SyncDraft();
+        SetAttachment(null);
+        livePreview.IsVisible = false;
+        liveTranslation.Text = "";
+        SetStatus("Input discarded.");
+        UpdateControls();
+    }
+
+    void FinishOperation()
+    {
+        operation?.Dispose(); operation = null; busy = false;
+        if (discardingInput)
+        {
+            recording.Clear(); SyncDraft(); SetAttachment(null);
+            SetStatus("Input discarded.");
+        }
+        UpdateControls(); ScrollToLatest();
+    }
     void SetStatus(string? text) { status.Text = text; status.IsVisible = !string.IsNullOrWhiteSpace(text); }
 
     void UpdateControls()
     {
         account.Text = (auth.IsConnected ? "Connected · " : "") + $"{first.Name} ↔ {second.Name}";
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
-        draft.IsReadOnly = busy && !pausingForEdit;
+        draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
         send.IsEnabled = !busy && auth.IsConnected && (recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
         attach.IsEnabled = !busy;
         removeAttachment.IsEnabled = !busy;
@@ -551,7 +579,11 @@ public sealed class MainPage : ContentPage
         SemanticProperties.SetDescription(firstSpeaker, $"{first.Name}, " + (fromFirst ? "active speaker" : "select speaker"));
         SemanticProperties.SetDescription(secondSpeaker, $"{second.Name}, " + (fromFirst ? "select speaker" : "active speaker"));
         firstSpeaker.IsEnabled = secondSpeaker.IsEnabled = !busy && !recording.HasTurn;
-        cancel.IsVisible = busy;
+        var hasInput = recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null;
+        cancel.Text = hasInput ? "×  Discard input" : "Cancel";
+        cancel.IsVisible = hasInput || (busy && !discardingInput);
+        cancel.IsEnabled = !discardingInput || !busy;
+        SemanticProperties.SetDescription(cancel, hasInput ? "Stop and delete the current input and attached image" : "Cancel current operation");
         progress.IsRunning = busy; progress.IsVisible = busy;
     }
 }

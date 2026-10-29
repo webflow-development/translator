@@ -1,3 +1,7 @@
+## Current input
+
+The red **× Discard input** button stops recording, cancels an in-progress translation and deletes the current editable draft and attachment. Existing translated chat messages and the selected speaker remain unchanged. Late recognition results cannot restore discarded text. **Cancel** remains available for operations without a draft, such as signing in.
+
 ## Conversation languages
 
 Translation responses appear progressively in a temporary preview, then become chat messages only after the complete response has been validated. Cancelling or failing a request removes the preview and retains the original draft and attachment. The selected model is cached in memory for 30 minutes, scoped to the current credential and cleared after access/model errors; subsequent sends avoid fetching the model catalog again.

@@ -378,6 +378,27 @@ await Check("Latin-script text needs no extra transliteration", () =>
     if (result.Translation != "Bonjour" || result.SourceTransliteration != "" || result.TargetTransliteration != "") throw new Exception();
     return Task.CompletedTask;
 });
+await Check("Discard stops the microphone, clears the draft and ignores late recognition", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    var culture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+    await draft.StartAsync(culture); speech.Emit("Delete this recording.");
+    draft.Clear(); speech.Emit("Late discarded words.");
+    if (draft.Text != "" || draft.HasTurn || speech.IsRecording) throw new Exception();
+    await draft.StartAsync(culture); speech.Emit("Fresh sentence.");
+    if (await draft.FinishAsync() != "Fresh sentence.") throw new Exception("Discarded text was appended.");
+});
+await Check("Discard while finalizing cannot resurrect text or a paused turn", async () =>
+{
+    var speech = new FakeSpeech { FinalGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+    var draft = new SpeechDraft(speech);
+    await draft.StartAsync(System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+    speech.Emit("Old sentence");
+    var finishing = draft.PauseAsync();
+    draft.Clear(); speech.FinalGate.SetResult("Old sentence completed.");
+    await finishing;
+    if (draft.Text != "" || draft.HasTurn || speech.IsRecording) throw new Exception();
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler
