@@ -5,12 +5,13 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Koe;
 
-public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string Romaji, ImageAttachment? Attachment = null, bool FromFirst = true)
+public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true)
 {
     public string Direction => string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
-    public string RomajiCaption => "Rōmaji · " + Romaji;
-    public bool TranslationHasRomaji => Target == "Japanese" && !string.IsNullOrWhiteSpace(Romaji);
-    public bool OriginalHasRomaji => Source == "Japanese" && !string.IsNullOrWhiteSpace(Romaji);
+    public string TranslatedReadingCaption => "Transliteration · " + TargetTransliteration;
+    public string OriginalReadingCaption => "Transliteration · " + SourceTransliteration;
+    public bool TranslationHasReading => !string.IsNullOrWhiteSpace(TargetTransliteration);
+    public bool OriginalHasReading => !string.IsNullOrWhiteSpace(SourceTransliteration);
     public ImageSource? Picture => Attachment is null ? null : ImageSource.FromStream(() => new MemoryStream(Attachment.Bytes, writable: false));
     public bool HasPicture => Attachment is not null;
     public bool HasOriginal => !string.IsNullOrWhiteSpace(Original);
@@ -28,12 +29,12 @@ public sealed class MainPage : ContentPage
     readonly CollectionView messages;
     int scrollRevision;
     string textSize = Preferences.Default.Get("koe.text-size", "Mittel");
-    bool showRomaji = Preferences.Default.Get("koe.show-romaji", true);
+    bool showTransliteration = Preferences.Default.Get("koe.show-transliteration", Preferences.Default.Get("koe.show-romaji", true));
     string TextSizeLabel => textSize == "Klein" ? "Small" : textSize == "Groß" ? "Large" : "Medium";
-    public bool ShowRomaji => showRomaji;
+    public bool ShowTransliteration => showTransliteration;
     public double MessageFontSize => textSize == "Klein" ? 16 : textSize == "Groß" ? 23 : 18;
     public double OriginalFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 19 : 14;
-    public double RomajiFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
+    public double ReadingFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
     readonly Editor draft = new() { Placeholder = "Type a message …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
     readonly Button attach = new() { Text = "+", FontSize = 28, WidthRequest = 40, HeightRequest = 44, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue, VerticalOptions = LayoutOptions.Start };
     readonly Image attachmentPreview = new() { WidthRequest = 70, HeightRequest = 70, Aspect = Aspect.AspectFill };
@@ -185,18 +186,18 @@ public sealed class MainPage : ContentPage
         var translation = new Label { FontSize = 18, TextColor = Ink, LineHeight = 1.15 };
         translation.SetBinding(Label.TextProperty, nameof(ConversationTurn.Translation));
         translation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
-        var translatedRomaji = new Label { TextColor = Blue, LineHeight = 1.15 };
-        translatedRomaji.SetBinding(Label.TextProperty, nameof(ConversationTurn.RomajiCaption));
-        translatedRomaji.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.TranslationHasRomaji));
-        translatedRomaji.SetBinding(Label.FontSizeProperty, new Binding(nameof(RomajiFontSize), source: this));
-        var originalRomaji = new Label { TextColor = Blue, LineHeight = 1.15 };
-        originalRomaji.SetBinding(Label.TextProperty, nameof(ConversationTurn.RomajiCaption));
-        originalRomaji.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.OriginalHasRomaji));
-        originalRomaji.SetBinding(Label.FontSizeProperty, new Binding(nameof(RomajiFontSize), source: this));
-        var translatedReading = new VerticalStackLayout { Children = { translatedRomaji } };
-        translatedReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowRomaji), source: this));
-        var originalReading = new VerticalStackLayout { Children = { originalRomaji } };
-        originalReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowRomaji), source: this));
+        var translatedReadingLabel = new Label { TextColor = Blue, LineHeight = 1.15 };
+        translatedReadingLabel.SetBinding(Label.TextProperty, nameof(ConversationTurn.TranslatedReadingCaption));
+        translatedReadingLabel.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.TranslationHasReading));
+        translatedReadingLabel.SetBinding(Label.FontSizeProperty, new Binding(nameof(ReadingFontSize), source: this));
+        var originalReadingLabel = new Label { TextColor = Blue, LineHeight = 1.15 };
+        originalReadingLabel.SetBinding(Label.TextProperty, nameof(ConversationTurn.OriginalReadingCaption));
+        originalReadingLabel.SetBinding(Label.IsVisibleProperty, nameof(ConversationTurn.OriginalHasReading));
+        originalReadingLabel.SetBinding(Label.FontSizeProperty, new Binding(nameof(ReadingFontSize), source: this));
+        var translatedReading = new VerticalStackLayout { Children = { translatedReadingLabel } };
+        translatedReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowTransliteration), source: this));
+        var originalReading = new VerticalStackLayout { Children = { originalReadingLabel } };
+        originalReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowTransliteration), source: this));
         var copyTranslation = CopyButton("Copy translation");
         copyTranslation.Clicked += async (_, _) =>
         {
@@ -331,14 +332,14 @@ public sealed class MainPage : ContentPage
 
     async Task ShowSettingsAsync()
     {
-        var romajiAction = showRomaji ? "Hide Romaji" : "Show Romaji";
-        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", $"Text size · {TextSizeLabel}", romajiAction);
+        var transliterationAction = showTransliteration ? "Hide transliteration" : "Show transliteration";
+        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", $"Text size · {TextSizeLabel}", transliterationAction);
         if (choice == "Conversation languages") { await ShowLanguagesAsync(); return; }
-        if (choice == romajiAction)
+        if (choice == transliterationAction)
         {
-            showRomaji = !showRomaji;
-            Preferences.Default.Set("koe.show-romaji", showRomaji);
-            OnPropertyChanged(nameof(ShowRomaji));
+            showTransliteration = !showTransliteration;
+            Preferences.Default.Set("koe.show-transliteration", showTransliteration);
+            OnPropertyChanged(nameof(ShowTransliteration));
             ScrollToLatest();
         }
         else if (choice == $"Text size · {TextSizeLabel}") await ShowTextSizeAsync();
@@ -411,7 +412,7 @@ public sealed class MainPage : ContentPage
         Preferences.Default.Set("koe.text-size", textSize);
         OnPropertyChanged(nameof(MessageFontSize));
         OnPropertyChanged(nameof(OriginalFontSize));
-        OnPropertyChanged(nameof(RomajiFontSize));
+        OnPropertyChanged(nameof(ReadingFontSize));
         draft.FontSize = OriginalFontSize + 2;
         AlignComposerText();
         ScrollToLatest();
@@ -502,17 +503,17 @@ public sealed class MainPage : ContentPage
             });
         });
         TranslationResult translated;
-        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview); }
+        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview, showTransliteration); }
         finally { closed = true; livePreview.IsVisible = false; liveTranslation.Text = ""; }
         ct.ThrowIfCancellationRequested();
         if (image is not null)
         {
             if (translated.ImageText is { } imageText)
-                turns.Add(new(ConversationLanguage.All.FirstOrDefault(x => x.Code == imageText.Source)?.Name ?? imageText.Source, ConversationLanguage.Get(imageText.Target).Name, imageText.Original, imageText.Translation, imageText.Romaji, image, imageText.Source == first.Code));
-            else turns.Add(new("Image", "", "", "No legible text found in the image.", "", image));
+                turns.Add(new(ConversationLanguage.All.FirstOrDefault(x => x.Code == imageText.Source)?.Name ?? imageText.Source, ConversationLanguage.Get(imageText.Target).Name, imageText.Original, imageText.Translation, imageText.SourceTransliteration, imageText.TargetTransliteration, image, imageText.Source == first.Code));
+            else turns.Add(new("Image", "", "", "No legible text found in the image.", "", "", image));
         }
         if (!string.IsNullOrWhiteSpace(text))
-            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, text, translated.Translation, translated.Romaji, null, direction));
+            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, text, translated.Translation, translated.SourceTransliteration, translated.TargetTransliteration, null, direction));
         recording.Clear(); SetAttachment(null);
         fromFirst = !string.IsNullOrWhiteSpace(text) ? !direction : translated.ImageText is { } detected ? detected.Source != first.Code : direction;
         SetStatus(null);

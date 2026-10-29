@@ -8,12 +8,12 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
 {
     readonly ModelSelectionCache models = new();
 
-    public async Task<TranslationResult> TranslateAsync(string text, ConversationLanguage source, ConversationLanguage target, CancellationToken ct, ImageAttachment? image = null, Action<TranslationPreview>? onPreview = null)
+    public async Task<TranslationResult> TranslateAsync(string text, ConversationLanguage source, ConversationLanguage target, CancellationToken ct, ImageAttachment? image = null, Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true)
     {
         var token = await auth.ValidAccessTokenAsync(ct);
         var credentialKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token)));
         var model = await models.GetAsync(credentialKey, () => LoadModelAsync(token, ct), ct);
-        var payload = TranslationRequest.Build(model, text, source, target, image);
+        var payload = TranslationRequest.Build(model, text, source, target, image, includeTransliteration);
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses")
         { Content = new StringContent(Encoding.UTF8.GetString(payload), Encoding.UTF8, "application/json") };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -31,7 +31,7 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
             if (preview == last) return;
             last = preview; onPreview(preview);
         });
-        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), source.Code == "ja" || target.Code == "ja");
+        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration);
     }
 
     async Task<string> LoadModelAsync(string token, CancellationToken ct)

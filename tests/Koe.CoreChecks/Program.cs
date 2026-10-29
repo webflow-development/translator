@@ -54,23 +54,23 @@ await Check("OIDC rejects modified signature", () => Reject(async () =>
     var signature = IdTokenValidator.Decode(pieces[2]); signature[0] ^= 1;
     await IdTokenValidator.ValidateAsync(http, pieces[0] + "." + pieces[1] + "." + B64(signature), "koe-client", "nonce", default);
 }));
-await Check("Translation preserves Japanese, romaji and escaped newlines separately", () =>
+await Check("Translation preserves Japanese, transliteration and escaped newlines separately", () =>
 {
-    var result = TranslationResult.Parse("{\"translation\":\"こんにちは。\\nお元気ですか？\",\"romaji\":\"Konnichiwa. Ogenki desu ka?\"}");
-    if (result.Translation != "こんにちは。\nお元気ですか？" || result.Romaji != "Konnichiwa. Ogenki desu ka?") throw new Exception();
+    var result = TranslationResult.Parse("{\"translation\":\"こんにちは。\\nお元気ですか？\",\"source_transliteration\":\"\",\"target_transliteration\":\"Konnichiwa. Ogenki desu ka?\"}");
+    if (result.Translation != "こんにちは。\nお元気ですか？" || result.TargetTransliteration != "Konnichiwa. Ogenki desu ka?") throw new Exception();
     return Task.CompletedTask;
 });
-await Check("Japanese input can return German translation with original romaji", () =>
+await Check("Japanese input attaches transliteration to the original rather than the German translation", () =>
 {
-    var result = TranslationResult.Parse("{\"translation\":\"Danke.\",\"romaji\":\"Arigatō.\"}");
-    if (result.Translation != "Danke." || result.Romaji != "Arigatō.") throw new Exception();
+    var result = TranslationResult.Parse("{\"translation\":\"Danke.\",\"source_transliteration\":\"Arigatō.\",\"target_transliteration\":\"\"}");
+    if (result.Translation != "Danke." || result.SourceTransliteration != "Arigatō." || result.TargetTransliteration != "") throw new Exception();
     return Task.CompletedTask;
 });
-foreach (var invalid in new[] { "not JSON", "{\"translation\":\"こんにちは\"}", "{\"translation\":\"\",\"romaji\":\"konnichiwa\"}", "{\"translation\":\"こんにちは\",\"romaji\":42}", "[]" })
+foreach (var invalid in new[] { "not JSON", "{\"translation\":\"こんにちは\"}", "{\"translation\":\"\",\"source_transliteration\":\"\",\"target_transliteration\":\"konnichiwa\"}", "{\"translation\":\"こんにちは\",\"source_transliteration\":\"\",\"target_transliteration\":42}", "[]" })
     await Check("Malformed or incomplete translation is rejected", () => Reject(() => { TranslationResult.Parse(invalid); return Task.CompletedTask; }));
 await Check("Translation JSON can be reconstructed from split streaming deltas", async () =>
 {
-    var fragments = new[] { "{\"translation\":\"こん", "にちは\",\"romaji\":\"Konnichiwa\"}" };
+    var fragments = new[] { "{\"translation\":\"こん", "にちは\",\"source_transliteration\":\"\",\"target_transliteration\":\"Konnichiwa\"}" };
     var events = string.Concat(fragments.Select(delta => "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta }) + "\n\n"));
     events += "data: {\"type\":\"response.completed\"}\n\n";
     if (TranslationResult.Parse(await Read(events)).Translation != "こんにちは") throw new Exception();
@@ -187,21 +187,21 @@ await Check("Source reading honors its size bound", async () =>
 await Check("Image OCR and speech translations retain independent directions", () =>
 {
     var json = """
-        {"translation":"どれがベジタリアン料理ですか？","romaji":"Dore ga bejitarian ryōri desu ka?","image_text_found":true,"image_source":"ja","image_target":"de","image_original":"野菜カレー","image_translation":"Gemüsecurry","image_romaji":"Yasai karē"}
+        {"translation":"どれがベジタリアン料理ですか？","source_transliteration":"","target_transliteration":"Dore ga bejitarian ryōri desu ka?","image_text_found":true,"image_source":"ja","image_target":"de","image_original":"野菜カレー","image_translation":"Gemüsecurry","image_source_transliteration":"Yasai karē","image_target_transliteration":""}
         """;
     var result = TranslationResult.Parse(json, hasImage: true);
-    if (result.ImageText is not { Source: "ja", Target: "de", Translation: "Gemüsecurry", Romaji: "Yasai karē" } || result.Translation != "どれがベジタリアン料理ですか？") throw new Exception();
+    if (result.ImageText is not { Source: "ja", Target: "de", Translation: "Gemüsecurry", SourceTransliteration: "Yasai karē", TargetTransliteration: "" } || result.Translation != "どれがベジタリアン料理ですか？") throw new Exception();
     return Task.CompletedTask;
 });
 await Check("An image without legible text is represented without invented OCR", () =>
 {
-    var result = TranslationResult.Parse("{\"translation\":\"\",\"romaji\":\"\",\"image_text_found\":false,\"image_source\":\"ja\",\"image_target\":\"de\"}", hasImage: true, hasText: false);
+    var result = TranslationResult.Parse("{\"translation\":\"\",\"source_transliteration\":\"\",\"target_transliteration\":\"\",\"image_text_found\":false,\"image_source\":\"ja\",\"image_target\":\"de\"}", hasImage: true, hasText: false);
     if (result.ImageText is not null) throw new Exception();
     return Task.CompletedTask;
 });
 await Check("Missing image reading is rejected rather than dropping source text", () => Reject(() =>
 {
-    TranslationResult.Parse("{\"translation\":\"Danke\",\"romaji\":\"Arigatō\",\"image_text_found\":true,\"image_source\":\"ja\",\"image_target\":\"de\",\"image_original\":\"猫\",\"image_translation\":\"Katze\"}", hasImage: true);
+    TranslationResult.Parse("{\"translation\":\"Danke\",\"source_transliteration\":\"\",\"target_transliteration\":\"Arigatō\",\"image_text_found\":true,\"image_source\":\"ja\",\"image_target\":\"de\",\"image_original\":\"猫\",\"image_translation\":\"Katze\"}", hasImage: true);
     return Task.CompletedTask;
 }));
 foreach (var source in ConversationLanguage.All)
@@ -214,10 +214,10 @@ await Check($"Language pair {source.Code} to {target.Code} configures translatio
     if (string.IsNullOrWhiteSpace(System.Globalization.CultureInfo.GetCultureInfo(source.Culture).Name)) throw new Exception();
     return Task.CompletedTask;
 });
-await Check("Non-Japanese translation accepts empty romaji", () =>
+await Check("Non-Japanese translation accepts empty target_transliteration", () =>
 {
-    var result = TranslationResult.Parse("{\"translation\":\"Hola\",\"romaji\":\"\"}", requiresRomaji: false);
-    if (result.Translation != "Hola" || result.Romaji != "") throw new Exception();
+    var result = TranslationResult.Parse("{\"translation\":\"Hola\",\"source_transliteration\":\"\",\"target_transliteration\":\"\"}", includeTransliteration: false);
+    if (result.Translation != "Hola" || result.TargetTransliteration != "") throw new Exception();
     return Task.CompletedTask;
 });
 await Check("Same-language pairs are rejected", () => Reject(() =>
@@ -225,11 +225,11 @@ await Check("Same-language pairs are rejected", () => Reject(() =>
     TranslationRequest.Build("test", "hello", ConversationLanguage.Get("en"), ConversationLanguage.Get("en"));
     return Task.CompletedTask;
 }));
-await Check("Mandarin image OCR accepts empty romaji", () =>
+await Check("Mandarin image OCR accepts empty target_transliteration", () =>
 {
     var result = TranslationResult.Parse("""
-    {"translation":"","romaji":"","image_text_found":true,"image_source":"zh","image_target":"en","image_original":"你好","image_translation":"Hello","image_romaji":""}
-    """, hasImage: true, hasText: false, requiresRomaji: false);
+    {"translation":"","source_transliteration":"","target_transliteration":"","image_text_found":true,"image_source":"zh","image_target":"en","image_original":"你好","image_translation":"Hello","image_source_transliteration":"","image_target_transliteration":""}
+    """, hasImage: true, hasText: false, includeTransliteration: false);
     if (result.ImageText is not { Source: "zh", Target: "en", Translation: "Hello" }) throw new Exception();
     return Task.CompletedTask;
 });
@@ -298,7 +298,7 @@ await Check("Failed catalog fetch is not cached", async () =>
 await Check("JSON preview decodes every prefix without exposing syntax or split escapes", () =>
 {
     const string expected = "Hello \"world\"\nこんにちは 😀";
-    var json = JsonSerializer.Serialize(new { translation = expected, romaji = "test", image_translation = "Image text" });
+    var json = JsonSerializer.Serialize(new { translation = expected, target_transliteration = "test", image_translation = "Image text" });
     for (var length = 0; length <= json.Length; length++)
     {
         var preview = TranslationPreview.Read(json[..length]);
@@ -342,6 +342,40 @@ await Check("New image language directions use the selected pair", () =>
     using var payload = JsonDocument.Parse(TranslationRequest.Build("test", "bonjour", new("fr", "French", "fr-FR"), new("vi", "Vietnamese", "vi-VN"), photo));
     var instruction = payload.RootElement.GetProperty("instructions").GetString()!;
     if (!instruction.Contains("from French to Vietnamese") || !instruction.Contains("fr or vi") || instruction.Contains("en, es, de, ja or zh")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Two non-Latin languages retain independent source and target transliterations", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"你好","source_transliteration":"Konnichiwa","target_transliteration":"Nǐ hǎo"}
+    """);
+    if (result.SourceTransliteration != "Konnichiwa" || result.TargetTransliteration != "Nǐ hǎo") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Disabling transliteration suppresses both readings without losing translations", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"你好","source_transliteration":"Konnichiwa","target_transliteration":"Nǐ hǎo"}
+    """, includeTransliteration: false);
+    if (result.Translation != "你好" || result.SourceTransliteration != "" || result.TargetTransliteration != "") throw new Exception();
+    using var payload = JsonDocument.Parse(TranslationRequest.Build("test", "Hello", ConversationLanguage.Get("en"), ConversationLanguage.Get("zh"), includeTransliteration: false));
+    if (!payload.RootElement.GetProperty("instructions").GetString()!.Contains("Transliteration is disabled")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Image OCR retains both romanizations independently", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"","source_transliteration":"","target_transliteration":"","image_text_found":true,"image_source":"ja","image_target":"zh","image_original":"こんにちは","image_translation":"你好","image_source_transliteration":"Konnichiwa","image_target_transliteration":"Nǐ hǎo"}
+    """, hasImage: true, hasText: false);
+    if (result.ImageText is not { SourceTransliteration: "Konnichiwa", TargetTransliteration: "Nǐ hǎo" }) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Latin-script text needs no extra transliteration", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"Bonjour","source_transliteration":"","target_transliteration":""}
+    """);
+    if (result.Translation != "Bonjour" || result.SourceTransliteration != "" || result.TargetTransliteration != "") throw new Exception();
     return Task.CompletedTask;
 });
 Console.WriteLine($"{passed} checks passed.");
