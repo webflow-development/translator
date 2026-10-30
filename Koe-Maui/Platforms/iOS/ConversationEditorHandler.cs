@@ -17,7 +17,16 @@ public sealed class ConversationEditorHandler : EditorHandler
     protected override MauiTextView CreatePlatformView()
     {
         var view = new ConversationTextView();
-        view.AddMauiDoneAccessoryView(this);
+        // MAUI's own accessory helper is internal. Use public UIKit APIs instead.
+        var toolbar = new UIToolbar();
+        var weakView = new WeakReference<ConversationTextView>(view);
+        var done = new UIBarButtonItem(UIBarButtonSystemItem.Done, (_, _) =>
+        {
+            if (weakView.TryGetTarget(out var editor)) editor.ResignFirstResponder();
+        });
+        toolbar.SetItems([new UIBarButtonItem(UIBarButtonSystemItem.FlexibleSpace), done], false);
+        toolbar.SizeToFit();
+        view.InputAccessoryView = toolbar;
         return view;
     }
 }
@@ -34,7 +43,7 @@ public sealed class ConversationTextView : MauiTextView
         if (IsFirstResponder) ReloadInputViews();
     }
 
-    public override UITextInputMode? TextInputMode
+    public override UITextInputMode TextInputMode
     {
         get
         {
