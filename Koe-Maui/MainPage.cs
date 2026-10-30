@@ -38,7 +38,7 @@ public sealed class MainPage : ContentPage
     public double MessageFontSize => textSize == "Klein" ? 16 : textSize == "Groß" ? 23 : 18;
     public double OriginalFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 19 : 14;
     public double ReadingFontSize => textSize == "Klein" ? 13 : textSize == "Groß" ? 18 : 14;
-    readonly Editor draft = new() { Placeholder = "Type a message …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
+    readonly ConversationEditor draft = new() { Placeholder = "Type a message …", PlaceholderColor = Muted, TextColor = Ink, BackgroundColor = Colors.Transparent, FontSize = 16, AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 44, MaximumHeightRequest = 104 };
     readonly Button attach = new() { Text = "+", FontSize = 28, WidthRequest = 40, HeightRequest = 44, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue, VerticalOptions = LayoutOptions.Start };
     readonly Image attachmentPreview = new() { WidthRequest = 70, HeightRequest = 70, Aspect = Aspect.AspectFill };
     readonly Label attachmentName = new() { FontSize = 12, TextColor = Ink, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
@@ -52,8 +52,8 @@ public sealed class MainPage : ContentPage
     readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
-    readonly Label account = new() { FontSize = 12, TextColor = Muted };
-    readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 140, HeightRequest = 40, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
+    readonly Label account = new() { FontSize = 12, TextColor = Muted, MaxLines = 1, LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center };
+    readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 132, HeightRequest = 30, MinimumHeightRequest = 30, VerticalOptions = LayoutOptions.Center, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
     bool updatingModels, loadingModels;
     string selectedModelId = Preferences.Default.Get("koe.model", "");
     readonly Label prompt = new() { FontSize = 17, FontAttributes = FontAttributes.Bold, TextColor = Ink };
@@ -77,12 +77,20 @@ public sealed class MainPage : ContentPage
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
-        var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 48, Padding = 0 };
+        var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 44, HeightRequest = 36, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Conversation options");
         menu.Clicked += async (_, _) => await ShowMenuAsync();
-        var header = new Grid { Padding = new Thickness(18, 12), ColumnSpacing = 12, BackgroundColor = Colors.White, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        header.Add(new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink }, account } }, 0, 0);
-        header.Add(new HorizontalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { modelPicker, menu } }, 1, 0);
+        var header = new Grid
+        {
+            Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 10, RowSpacing = 2, BackgroundColor = Colors.White,
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }
+        };
+        header.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        menu.HorizontalOptions = LayoutOptions.End;
+        header.Add(menu, 1, 0);
+        header.Add(account, 0, 1);
+        header.Add(modelPicker, 1, 1);
         SemanticProperties.SetDescription(modelPicker, "ChatGPT translation model");
         modelPicker.SelectedIndexChanged += (_, _) =>
         {
@@ -669,7 +677,9 @@ public sealed class MainPage : ContentPage
     {
         firstGreeting.Text = first.Greeting;
         secondGreeting.Text = second.Greeting;
-        account.Text = (auth.IsConnected ? "Connected · " : "") + $"{first.Name} ↔ {second.Name}";
+        account.Text = auth.IsConnected ? "● ChatGPT connected" : "○ ChatGPT not connected";
+        account.TextColor = auth.IsConnected ? Color.FromArgb("#28774E") : Muted;
+        draft.PreferredCulture = SourceLanguage.Culture;
         modelPicker.IsVisible = auth.IsConnected;
         modelPicker.IsEnabled = auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && modelPicker.ItemsSource is { Count: > 0 };
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;

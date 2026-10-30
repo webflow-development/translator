@@ -12,6 +12,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ChatGptAuth>();
         builder.Services.AddSingleton<OpenAiTranslator>();
 #if IOS
+        builder.ConfigureMauiHandlers(handlers => handlers.AddHandler<ConversationEditor, Platforms.iOS.ConversationEditorHandler>());
         var speechLocales = new List<string>();
         foreach (Foundation.NSLocale locale in Speech.SFSpeechRecognizer.SupportedLocales)
             speechLocales.Add(locale.LocaleIdentifier);
