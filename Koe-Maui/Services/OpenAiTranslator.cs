@@ -8,12 +8,12 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
 {
     readonly ModelSelectionCache models = new();
 
-    public async Task<TranslationResult> TranslateAsync(string text, ConversationLanguage source, ConversationLanguage target, CancellationToken ct, ImageAttachment? image = null, Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true)
+    public async Task<TranslationResult> TranslateAsync(string text, ConversationLanguage source, ConversationLanguage target, CancellationToken ct, ImageAttachment? image = null, Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true, string? modelId = null)
     {
         var token = await auth.ValidAccessTokenAsync(ct);
-        var credentialKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-        var model = await models.GetAsync(credentialKey, () => LoadModelAsync(token, ct), ct);
-        var payload = TranslationRequest.Build(model, text, source, target, image, includeTransliteration);
+        var catalog = await GetModelsAsync(token, ct);
+        var model = TranslationModel.Resolve(catalog, modelId);
+        var payload = TranslationRequest.Build(model.Id, text, source, target, image, includeTransliteration);
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses")
         { Content = new StringContent(Encoding.UTF8.GetString(payload), Encoding.UTF8, "application/json") };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -34,17 +34,26 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
         return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration);
     }
 
-    async Task<string> LoadModelAsync(string token, CancellationToken ct)
+    public async Task<TranslationModel[]> GetModelsAsync(CancellationToken ct)
+        => await GetModelsAsync(await auth.ValidAccessTokenAsync(ct), ct);
+
+    async Task<TranslationModel[]> GetModelsAsync(string token, CancellationToken ct)
+    {
+        var credentialKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        return TranslationModel.ParseCatalog(await models.GetAsync(credentialKey, () => LoadCatalogAsync(token, ct), ct));
+    }
+
+    public void ClearModels() => models.Clear();
+
+    async Task<string> LoadCatalogAsync(string token, CancellationToken ct)
     {
         using var catalogRequest = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
         catalogRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var catalogResponse = await http.SendAsync(catalogRequest, ct);
         EnsureSuccess(catalogResponse);
-        using var catalog = JsonDocument.Parse(await catalogResponse.Content.ReadAsStringAsync(ct));
-        var model = catalog.RootElement.GetProperty("models").EnumerateArray().FirstOrDefault(m =>
-            m.TryGetProperty("visibility", out var visibility) && visibility.GetString() == "list");
-        if (model.ValueKind == JsonValueKind.Undefined) throw new InvalidOperationException("No available model was found for this account.");
-        return model.GetProperty("slug").GetString()!;
+        var json = await catalogResponse.Content.ReadAsStringAsync(ct);
+        _ = TranslationModel.ParseCatalog(json);
+        return json;
     }
 
     static void EnsureSuccess(HttpResponseMessage response)

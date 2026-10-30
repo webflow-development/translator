@@ -53,6 +53,9 @@ public sealed class MainPage : ContentPage
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted };
+    readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 140, HeightRequest = 40, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
+    bool updatingModels, loadingModels;
+    string selectedModelId = Preferences.Default.Get("koe.model", "");
     readonly Label prompt = new() { FontSize = 17, FontAttributes = FontAttributes.Bold, TextColor = Ink };
     readonly Label hint = new() { FontSize = 12, TextColor = Muted };
     readonly ActivityIndicator progress = new() { Color = Colors.White, WidthRequest = 42, HeightRequest = 42, IsVisible = false, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, InputTransparent = true, ZIndex = 1 };
@@ -79,7 +82,14 @@ public sealed class MainPage : ContentPage
         menu.Clicked += async (_, _) => await ShowMenuAsync();
         var header = new Grid { Padding = new Thickness(18, 12), ColumnSpacing = 12, BackgroundColor = Colors.White, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
         header.Add(new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink }, account } }, 0, 0);
-        header.Add(menu, 1, 0);
+        header.Add(new HorizontalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { modelPicker, menu } }, 1, 0);
+        SemanticProperties.SetDescription(modelPicker, "ChatGPT translation model");
+        modelPicker.SelectedIndexChanged += (_, _) =>
+        {
+            if (updatingModels || modelPicker.SelectedItem is not TranslationModel selected) return;
+            selectedModelId = selected.Id;
+            Preferences.Default.Set("koe.model", selectedModelId);
+        };
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
@@ -341,6 +351,39 @@ public sealed class MainPage : ContentPage
         try { await auth.LoadAsync(); }
         catch { SetStatus("Could not load your sign-in. Please reconnect."); }
         UpdateControls();
+        await RefreshModelsAsync();
+    }
+
+    async Task RefreshModelsAsync()
+    {
+        if (!auth.IsConnected)
+        {
+            updatingModels = true;
+            modelPicker.ItemsSource = null;
+            updatingModels = false;
+            return;
+        }
+        if (loadingModels) return;
+        loadingModels = true;
+        var connection = auth.ConnectionKey;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var available = await translator.GetModelsAsync(timeout.Token);
+            if (!auth.IsConnected || auth.ConnectionKey != connection) return;
+            var selected = available.FirstOrDefault(x => x.Id == selectedModelId) ?? available[0];
+            updatingModels = true;
+            modelPicker.ItemsSource = available;
+            modelPicker.SelectedItem = selected;
+            selectedModelId = selected.Id;
+            Preferences.Default.Set("koe.model", selectedModelId);
+        }
+        catch (Exception) { if (!busy && auth.IsConnected && pageVisible) SetStatus("Could not load model choices. Reconnect to refresh the list."); }
+        finally
+        {
+            updatingModels = false; loadingModels = false; UpdateControls();
+            if (auth.IsConnected && auth.ConnectionKey != connection) await RefreshModelsAsync();
+        }
     }
 
     protected override void OnDisappearing()
@@ -500,12 +543,12 @@ public sealed class MainPage : ContentPage
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
-            if (auth.IsConnected) { await auth.SignOutAsync(operation.Token); SetStatus("Signed out."); }
+            if (auth.IsConnected) { await auth.SignOutAsync(operation.Token); translator.ClearModels(); SetStatus("Signed out."); }
             else { await auth.SignInAsync(operation.Token); SetStatus(null); }
         }
         catch (OperationCanceledException) { SetStatus("Sign-in cancelled."); }
         catch (Exception ex) { SetStatus(ex.Message); }
-        finally { FinishOperation(); }
+        finally { FinishOperation(); await RefreshModelsAsync(); }
     }
 
     async Task TogglePauseAsync()
@@ -580,7 +623,7 @@ public sealed class MainPage : ContentPage
             });
         });
         TranslationResult translated;
-        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview, showTransliteration); }
+        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview, showTransliteration, selectedModelId); }
         finally { closed = true; livePreview.IsVisible = false; liveTranslation.Text = ""; }
         ct.ThrowIfCancellationRequested();
         if (image is not null)
@@ -627,6 +670,8 @@ public sealed class MainPage : ContentPage
         firstGreeting.Text = first.Greeting;
         secondGreeting.Text = second.Greeting;
         account.Text = (auth.IsConnected ? "Connected · " : "") + $"{first.Name} ↔ {second.Name}";
+        modelPicker.IsVisible = auth.IsConnected;
+        modelPicker.IsEnabled = auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && modelPicker.ItemsSource is { Count: > 0 };
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
         send.IsEnabled = !busy && auth.IsConnected && (recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);

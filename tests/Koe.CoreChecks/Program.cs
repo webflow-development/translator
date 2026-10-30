@@ -438,6 +438,32 @@ await Check("Playback voices match language across regions and never cross langu
     if (!american.Matches("en") || !british.Matches("en") || american.Matches("de") || japaneseVoice.Matches("zh") || !mandarinVoice.Matches("zh")) throw new Exception();
     return Task.CompletedTask;
 });
+await Check("Model picker shows only visible models, retains server order and uses display names", () =>
+{
+    var models = TranslationModel.ParseCatalog("""
+    {"models":[{"slug":"hidden","display_name":"Hidden","visibility":"hide"},{"slug":"fast-model","display_name":"Fast model","visibility":"list"},{"slug":"large-model","visibility":"list"},{"slug":"fast-model","display_name":"Duplicate","visibility":"list"}]}
+    """);
+    if (models.Length != 2 || models[0] != new TranslationModel("fast-model", "Fast model") || models[1] != new TranslationModel("large-model", "large-model")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Selected catalog model is passed to translation instead of the first model", () =>
+{
+    var models = new[] { new TranslationModel("first", "First"), new TranslationModel("chosen", "Chosen") };
+    var selected = TranslationModel.Resolve(models, "chosen");
+    using var request = JsonDocument.Parse(TranslationRequest.Build(selected.Id, "Hello", ConversationLanguage.Get("en"), ConversationLanguage.Get("ja")));
+    if (request.RootElement.GetProperty("model").GetString() != "chosen" || TranslationModel.Resolve(models, null) != models[0]) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("An unavailable selected model is rejected instead of silently changing models", () => Reject(() =>
+{
+    TranslationModel.Resolve([new("available", "Available")], "removed");
+    return Task.CompletedTask;
+}));
+await Check("An empty model catalog cannot populate the picker", () => Reject(() =>
+{
+    TranslationModel.ParseCatalog("{\"models\":[]}");
+    return Task.CompletedTask;
+}));
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

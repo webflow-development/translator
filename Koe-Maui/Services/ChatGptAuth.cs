@@ -19,6 +19,7 @@ public sealed class ChatGptAuth(HttpClient http)
     bool loaded;
     public bool IsConnected => current?.Scopes.Contains("chatgpt.tokens.use.direct") == true;
     public string AccountLabel => current?.Email ?? "ChatGPT";
+    public string? ConnectionKey => current is null ? null : current.Subject + ":" + current.ClientId;
 
     public async Task LoadAsync()
     {
