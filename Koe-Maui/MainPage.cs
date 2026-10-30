@@ -23,7 +23,9 @@ public sealed class MainPage : ContentPage
     readonly ChatGptAuth auth;
     readonly OpenAiTranslator translator;
     readonly SpeechDraft recording;
-    readonly ISpeechPlayback playback;
+    readonly SpeechOutput playback;
+    readonly OpenAiVoiceSettings voiceSettings;
+    int playbackRevision;
     readonly ObservableCollection<ConversationTurn> turns = [];
     readonly Label liveTranslation = new() { TextColor = Ink, FontSize = 18, LineHeight = 1.15 };
     readonly Border livePreview;
@@ -70,10 +72,10 @@ public sealed class MainPage : ContentPage
     ConversationLanguage SourceLanguage => fromFirst ? first : second;
     ConversationLanguage TargetLanguage => fromFirst ? second : first;
 
-    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, ISpeechPlayback playback)
+    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings)
     {
         if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
-        this.auth = auth; this.translator = translator; this.playback = playback; recording = new SpeechDraft(speech);
+        this.auth = auth; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings; recording = new SpeechDraft(speech);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
@@ -236,9 +238,9 @@ public sealed class MainPage : ContentPage
             if (copyOriginal.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Original);
         };
         var speakTranslation = SpeakerButton("Read translation aloud");
-        speakTranslation.Clicked += (_, _) => { if (speakTranslation.BindingContext is ConversationTurn turn) SpeakText(turn.Translation, turn.Target); };
+        speakTranslation.Clicked += async (_, _) => { if (speakTranslation.BindingContext is ConversationTurn turn) await SpeakTextAsync(turn.Translation, turn.Target); };
         var speakOriginal = SpeakerButton("Read original aloud");
-        speakOriginal.Clicked += (_, _) => { if (speakOriginal.BindingContext is ConversationTurn turn) SpeakText(turn.Original, turn.Source); };
+        speakOriginal.Clicked += async (_, _) => { if (speakOriginal.BindingContext is ConversationTurn turn) await SpeakTextAsync(turn.Original, turn.Source); };
         var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) } };
         translatedRow.Add(translation, 0, 0); translatedRow.Add(copyTranslation, 1, 0);
         translatedRow.Add(speakTranslation, 2, 0);
@@ -285,18 +287,26 @@ public sealed class MainPage : ContentPage
         return button;
     }
 
-    void SpeakText(string text, string languageName)
+    async Task SpeakTextAsync(string text, string languageName)
     {
         if (busy) return;
         if (recording.IsRecording) { SetStatus("Pause recording before playing a message."); return; }
         var language = ConversationLanguage.All.FirstOrDefault(x => x.Name == languageName);
         if (language is null) { SetStatus("Read aloud is not available for this language."); return; }
-        try { playback.Speak(text, language.Code, Preferences.Default.Get("koe.voice." + language.Code, "")); }
-        catch (Exception ex) { SetStatus(ex.Message); }
+        var revision = ++playbackRevision;
+        try
+        {
+            if (playback.UsesOpenAi) SetStatus("Preparing OpenAI voice … Tap the speaker again to stop.");
+            var started = await playback.SpeakAsync(text, language.Code, Preferences.Default.Get("koe.voice." + language.Code, ""));
+            if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording)
+                SetStatus(started && playback.UsesOpenAi ? "OpenAI voice (AI-generated) · tap the speaker to stop." : null);
+        }
+        catch (Exception ex) { if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording) SetStatus(ex.Message); }
     }
 
     async Task ShowVoicesAsync()
     {
+        if (voiceSettings.Enabled) { await ShowOpenAiVoiceSettingsAsync(); return; }
         var language = await PickLanguageAsync("Voice language", ConversationLanguage.All);
         if (language is null) return;
         var voices = playback.GetVoices(language.Code);
@@ -312,8 +322,15 @@ public sealed class MainPage : ContentPage
         var selection = Array.IndexOf(choices, selected);
         if (selection < 0) return;
         Preferences.Default.Set("koe.voice." + language.Code, voices[selection].Id);
-        try { playback.Speak(language.Greeting, language.Code, voices[selection].Id); }
+        try { await playback.SpeakAsync(language.Greeting, language.Code, voices[selection].Id); }
         catch (Exception ex) { SetStatus(ex.Message); }
+    }
+
+    async Task ShowOpenAiVoiceSettingsAsync()
+    {
+        ++playbackRevision;
+        playback.Stop();
+        await Navigation.PushModalAsync(new OpenAiVoicePage(voiceSettings));
     }
 
     async Task ShowIphoneVoiceSettingsAsync(string? languageName = null)
@@ -396,6 +413,7 @@ public sealed class MainPage : ContentPage
 
     protected override void OnDisappearing()
     {
+        ++playbackRevision;
         playback.Stop();
         if (!pickingAttachment) { pageVisible = false; operation?.Cancel(); recording.Suspend(); }
         base.OnDisappearing();
@@ -458,7 +476,9 @@ public sealed class MainPage : ContentPage
     async Task ShowSettingsAsync()
     {
         var transliterationAction = showTransliteration ? "Hide transliteration" : "Show transliteration";
-        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", "Speech voices", "Add iPhone voices…", $"Text size · {TextSizeLabel}", transliterationAction);
+        var openAiAction = "OpenAI voice · " + (voiceSettings.Enabled ? "On" : "Off");
+        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", openAiAction, "Speech voices", "Add iPhone voices…", $"Text size · {TextSizeLabel}", transliterationAction);
+        if (choice == openAiAction) { await ShowOpenAiVoiceSettingsAsync(); return; }
         if (choice == "Add iPhone voices…") { await ShowIphoneVoiceSettingsAsync(); return; }
         if (choice == "Speech voices") { await ShowVoicesAsync(); return; }
         if (choice == "Conversation languages") { await ShowLanguagesAsync(); return; }
@@ -573,6 +593,7 @@ public sealed class MainPage : ContentPage
             else
             {
                 draft.Unfocus();
+                ++playbackRevision;
                 playback.Stop();
                 await recording.StartAsync(CultureInfo.GetCultureInfo(SourceLanguage.Culture), operation.Token);
                 SetStatus(null);
@@ -595,6 +616,7 @@ public sealed class MainPage : ContentPage
     {
         if (busy || !auth.IsConnected || (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null)) return;
         draft.Unfocus();
+        ++playbackRevision; playback.Stop();
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
@@ -649,6 +671,7 @@ public sealed class MainPage : ContentPage
 
     void DiscardInput()
     {
+        ++playbackRevision;
         playback.Stop();
         discardingInput = true;
         operation?.Cancel();

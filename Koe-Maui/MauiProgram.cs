@@ -11,6 +11,9 @@ public static class MauiProgram
         builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromMinutes(3) });
         builder.Services.AddSingleton<ChatGptAuth>();
         builder.Services.AddSingleton<OpenAiTranslator>();
+        builder.Services.AddSingleton<OpenAiSpeechClient>();
+        builder.Services.AddSingleton<OpenAiVoiceSettings>();
+        builder.Services.AddSingleton<SpeechOutput>();
 #if IOS
         builder.ConfigureMauiHandlers(handlers => handlers.AddHandler<ConversationEditor, Platforms.iOS.ConversationEditorHandler>());
         var speechLocales = new List<string>();
@@ -19,9 +22,11 @@ public static class MauiProgram
         ConversationLanguage.ConfigureSpeechLocales(speechLocales);
         builder.Services.AddSingleton<ISpeechCapture, Platforms.iOS.IosSpeechCapture>();
         builder.Services.AddSingleton<ISpeechPlayback, Platforms.iOS.IosSpeechPlayback>();
+        builder.Services.AddSingleton<IAudioPlayback, Platforms.iOS.IosAudioPlayback>();
 #else
         builder.Services.AddSingleton<ISpeechCapture, UnsupportedSpeechCapture>();
         builder.Services.AddSingleton<ISpeechPlayback, UnsupportedSpeechPlayback>();
+        builder.Services.AddSingleton<IAudioPlayback, UnsupportedAudioPlayback>();
 #endif
         builder.Services.AddSingleton<MainPage>();
         return builder.Build();

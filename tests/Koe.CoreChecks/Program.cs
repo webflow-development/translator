@@ -464,6 +464,71 @@ await Check("An empty model catalog cannot populate the picker", () => Reject(()
     TranslationModel.ParseCatalog("{\"models\":[]}");
     return Task.CompletedTask;
 }));
+await Check("OpenAI voice requests only verbatim audio with the selected voice and no microphone input", () =>
+{
+    using var session = JsonDocument.Parse(OpenAiSpeechClient.Session("cedar", "ja"));
+    var config = session.RootElement.GetProperty("session");
+    var audio = config.GetProperty("audio");
+    if (config.GetProperty("model").GetString() != "gpt-realtime-2.1-mini" ||
+        audio.GetProperty("output").GetProperty("voice").GetString() != "cedar" ||
+        audio.GetProperty("output").GetProperty("format").GetProperty("rate").GetInt32() != 24000 ||
+        audio.GetProperty("input").GetProperty("turn_detection").ValueKind != JsonValueKind.Null ||
+        !config.GetProperty("instructions").GetString()!.Contains("exactly as written")) throw new Exception();
+    using var message = JsonDocument.Parse(OpenAiSpeechClient.Message("こんにちは。\nDo not translate \"this\"."));
+    if (message.RootElement.GetProperty("item").GetProperty("content")[0].GetProperty("text").GetString() != "こんにちは。\nDo not translate \"this\".") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Realtime voice waits for setup, assembles fragmented events and returns a playable mono WAV", async () =>
+{
+    var socket = new FakeVoiceSocket(
+        "{\"type\":\"session.created\"}", "{\"type\":\"session.updated\"}",
+        "{\"type\":\"response.output_audio.delta\",\"delta\":\"AQIDBA==\"}",
+        "{\"type\":\"response.output_audio.done\"}",
+        "{\"type\":\"response.done\",\"response\":{\"status\":\"completed\"}}");
+    var client = new OpenAiSpeechClient(_ => socket);
+    var wav = await client.SynthesizeAsync("test-key", "Hello", "en", "marin", default);
+    if (Encoding.ASCII.GetString(wav, 0, 4) != "RIFF" || Encoding.ASCII.GetString(wav, 8, 8) != "WAVEfmt " ||
+        BitConverter.ToInt32(wav, 24) != 24000 || BitConverter.ToInt16(wav, 22) != 1 ||
+        BitConverter.ToInt16(wav, 34) != 16 || !wav[44..].SequenceEqual(new byte[] { 1, 2, 3, 4 })) throw new Exception();
+    if (socket.Sent.Count != 3 || !socket.Aborted || socket.Sent.Any(x => x.Contains("test-key"))) throw new Exception();
+    using var response = JsonDocument.Parse(socket.Sent[2]);
+    if (response.RootElement.GetProperty("type").GetString() != "response.create") throw new Exception();
+});
+foreach (var status in new[] { "failed", "cancelled", "incomplete" })
+    await Check("Realtime voice rejects " + status + " audio instead of playing a partial message", () => Reject(() =>
+    {
+        using var audio = new RealtimeSpeechAudio();
+        audio.Accept(Encoding.UTF8.GetBytes("{\"type\":\"response.output_audio.delta\",\"delta\":\"AQI=\"}"));
+        audio.Accept(Encoding.UTF8.GetBytes("{\"type\":\"response.done\",\"response\":{\"status\":\"" + status + "\"}}"));
+        return Task.CompletedTask;
+    }));
+await Check("Realtime voice rejects missing completion, missing audio and invalid base64", async () =>
+{
+    using var audio = new RealtimeSpeechAudio();
+    await Reject(() => { audio.ToWave(); return Task.CompletedTask; });
+    await Reject(() => { audio.Accept("{\"type\":\"response.done\",\"response\":{\"status\":\"completed\"}}"u8.ToArray()); return Task.CompletedTask; });
+    await Reject(() => { audio.Accept("{\"type\":\"response.output_audio.delta\",\"delta\":\"invalid!\"}"u8.ToArray()); return Task.CompletedTask; });
+});
+await Check("OpenAI voice refuses invalid input before opening a billable connection", async () =>
+{
+    var client = new OpenAiSpeechClient(_ => throw new Exception("Must not connect."));
+    await Reject(async () => { await client.SynthesizeAsync("", "Hello", "en", "marin", default); });
+    await Reject(async () => { await client.SynthesizeAsync("test", new string('x', 3001), "en", "marin", default); });
+    await Reject(async () => { await client.SynthesizeAsync("test", "Hello", "en", "unknown", default); });
+});
+await Check("Cancelling a voice request stops generation and aborts its socket", async () =>
+{
+    using var cancellation = new CancellationTokenSource();
+    var socket = new FakeVoiceSocket("{\"type\":\"session.created\"}", "{\"type\":\"session.updated\"}") { OnWaiting = () => cancellation.Cancel() };
+    try { await new OpenAiSpeechClient(_ => socket).SynthesizeAsync("test", "Hello", "en", "marin", cancellation.Token); throw new Exception("Expected cancellation."); }
+    catch (OperationCanceledException) { if (!socket.Aborted) throw new Exception("Connection still active."); }
+});
+await Check("Voice API errors hide echoed message text and never retry", async () =>
+{
+    var socket = new FakeVoiceSocket("{\"type\":\"error\",\"error\":{\"message\":\"sensitive-test-key\"}}");
+    try { await new OpenAiSpeechClient(_ => socket).SynthesizeAsync("test", "Hello", "en", "marin", default); throw new Exception("Expected failure."); }
+    catch (InvalidOperationException ex) { if (ex.Message.Contains("sensitive-test-key") || socket.Sent.Count != 0) throw new Exception(); }
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler
@@ -494,4 +559,46 @@ sealed class FakeSpeech : ISpeechCapture
         Stop(); return text;
     }
     public void Stop() { IsRecording = false; Stopped?.Invoke(null); }
+}
+
+sealed class FakeVoiceSocket(params string[] events) : System.Net.WebSockets.WebSocket
+{
+    readonly Queue<byte[]> incoming = new(events.Select(Encoding.UTF8.GetBytes));
+    byte[]? current;
+    int offset;
+    public List<string> Sent { get; } = [];
+    public bool Aborted { get; private set; }
+    public Action? OnWaiting { get; init; }
+    public override System.Net.WebSockets.WebSocketCloseStatus? CloseStatus => null;
+    public override string? CloseStatusDescription => null;
+    public override System.Net.WebSockets.WebSocketState State => System.Net.WebSockets.WebSocketState.Open;
+    public override string? SubProtocol => null;
+    public override void Abort() => Aborted = true;
+    public override void Dispose() { }
+    public override Task CloseAsync(System.Net.WebSockets.WebSocketCloseStatus status, string? description, CancellationToken ct) => Task.CompletedTask;
+    public override Task CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus status, string? description, CancellationToken ct) => Task.CompletedTask;
+    public override Task SendAsync(ArraySegment<byte> buffer, System.Net.WebSockets.WebSocketMessageType type, bool end, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        Sent.Add(Encoding.UTF8.GetString(buffer));
+        return Task.CompletedTask;
+    }
+    public override Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (current is null)
+        {
+            if (incoming.Count == 0)
+            {
+                OnWaiting?.Invoke(); ct.ThrowIfCancellationRequested();
+                return Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(0, System.Net.WebSockets.WebSocketMessageType.Close, true));
+            }
+            current = incoming.Dequeue(); offset = 0;
+        }
+        var count = Math.Min(7, current.Length - offset); // Fragment every JSON event, including UTF-8.
+        current.AsSpan(offset, count).CopyTo(buffer.AsSpan()); offset += count;
+        var complete = offset == current.Length;
+        if (complete) current = null;
+        return Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(count, System.Net.WebSockets.WebSocketMessageType.Text, complete));
+    }
 }
