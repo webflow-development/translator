@@ -429,6 +429,15 @@ await Check("Image-only input requires no fabricated corrected message", () =>
     if (result.CorrectedOriginal != "" || result.Translation != "" || result.ImageText is not null) throw new Exception();
     return Task.CompletedTask;
 });
+await Check("Playback voices match language across regions and never cross languages", () =>
+{
+    var american = new PlaybackVoice("en-us", "English US", "en-US");
+    var british = new PlaybackVoice("en-gb", "English UK", "en_GB");
+    var japaneseVoice = new PlaybackVoice("ja", "Japanese", "ja-JP");
+    var mandarinVoice = new PlaybackVoice("zh", "Mandarin", "zh-CN");
+    if (!american.Matches("en") || !british.Matches("en") || american.Matches("de") || japaneseVoice.Matches("zh") || !mandarinVoice.Matches("zh")) throw new Exception();
+    return Task.CompletedTask;
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

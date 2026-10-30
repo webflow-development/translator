@@ -17,8 +17,10 @@ public static class MauiProgram
             speechLocales.Add(locale.LocaleIdentifier);
         ConversationLanguage.ConfigureSpeechLocales(speechLocales);
         builder.Services.AddSingleton<ISpeechCapture, Platforms.iOS.IosSpeechCapture>();
+        builder.Services.AddSingleton<ISpeechPlayback, Platforms.iOS.IosSpeechPlayback>();
 #else
         builder.Services.AddSingleton<ISpeechCapture, UnsupportedSpeechCapture>();
+        builder.Services.AddSingleton<ISpeechPlayback, UnsupportedSpeechPlayback>();
 #endif
         builder.Services.AddSingleton<MainPage>();
         return builder.Build();

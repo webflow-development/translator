@@ -23,6 +23,7 @@ public sealed class MainPage : ContentPage
     readonly ChatGptAuth auth;
     readonly OpenAiTranslator translator;
     readonly SpeechDraft recording;
+    readonly ISpeechPlayback playback;
     readonly ObservableCollection<ConversationTurn> turns = [];
     readonly Label liveTranslation = new() { TextColor = Ink, FontSize = 18, LineHeight = 1.15 };
     readonly Border livePreview;
@@ -66,10 +67,10 @@ public sealed class MainPage : ContentPage
     ConversationLanguage SourceLanguage => fromFirst ? first : second;
     ConversationLanguage TargetLanguage => fromFirst ? second : first;
 
-    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech)
+    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, ISpeechPlayback playback)
     {
         if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
-        this.auth = auth; this.translator = translator; recording = new SpeechDraft(speech);
+        this.auth = auth; this.translator = translator; this.playback = playback; recording = new SpeechDraft(speech);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
@@ -216,11 +217,17 @@ public sealed class MainPage : ContentPage
         {
             if (copyOriginal.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Original);
         };
-        var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        var speakTranslation = SpeakerButton("Read translation aloud");
+        speakTranslation.Clicked += (_, _) => { if (speakTranslation.BindingContext is ConversationTurn turn) SpeakText(turn.Translation, turn.Target); };
+        var speakOriginal = SpeakerButton("Read original aloud");
+        speakOriginal.Clicked += (_, _) => { if (speakOriginal.BindingContext is ConversationTurn turn) SpeakText(turn.Original, turn.Source); };
+        var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) } };
         translatedRow.Add(translation, 0, 0); translatedRow.Add(copyTranslation, 1, 0);
-        var originalRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        translatedRow.Add(speakTranslation, 2, 0);
+        var originalRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) } };
         originalRow.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasOriginal));
         originalRow.Add(original, 0, 0); originalRow.Add(copyOriginal, 1, 0);
+        originalRow.Add(speakOriginal, 2, 0);
         var picture = new Image { HeightRequest = 150, Aspect = Aspect.AspectFit };
         picture.SetBinding(Image.SourceProperty, nameof(ConversationTurn.Picture));
         picture.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasPicture));
@@ -233,6 +240,7 @@ public sealed class MainPage : ContentPage
         bubble.BindingContextChanged += (_, _) =>
         {
             if (bubble.BindingContext is not ConversationTurn turn) return;
+            speakTranslation.IsVisible = !string.IsNullOrWhiteSpace(turn.Target) && !string.IsNullOrWhiteSpace(turn.Translation);
             bubble.HorizontalOptions = turn.FromFirst ? LayoutOptions.End : LayoutOptions.Start;
             bubble.Margin = turn.FromFirst ? new Thickness(34, 6, 4, 6) : new Thickness(4, 6, 34, 6);
             bubble.BackgroundColor = turn.FromFirst ? Color.FromArgb("#D3E8F8") : Colors.White;
@@ -250,6 +258,42 @@ public sealed class MainPage : ContentPage
         var button = new ImageButton { Source = "copy.png", BackgroundColor = Colors.Transparent, WidthRequest = 40, HeightRequest = 40, Padding = 10, VerticalOptions = LayoutOptions.Start };
         SemanticProperties.SetDescription(button, description);
         return button;
+    }
+
+    static ImageButton SpeakerButton(string description)
+    {
+        var button = new ImageButton { Source = "speaker.png", BackgroundColor = Colors.Transparent, WidthRequest = 40, HeightRequest = 40, Padding = 9, VerticalOptions = LayoutOptions.Start };
+        SemanticProperties.SetDescription(button, description);
+        return button;
+    }
+
+    void SpeakText(string text, string languageName)
+    {
+        if (busy) return;
+        if (recording.IsRecording) { SetStatus("Pause recording before playing a message."); return; }
+        var language = ConversationLanguage.All.FirstOrDefault(x => x.Name == languageName);
+        if (language is null) { SetStatus("Read aloud is not available for this language."); return; }
+        try { playback.Speak(text, language.Code, Preferences.Default.Get("koe.voice." + language.Code, "")); }
+        catch (Exception ex) { SetStatus(ex.Message); }
+    }
+
+    async Task ShowVoicesAsync()
+    {
+        var language = await PickLanguageAsync("Voice language", ConversationLanguage.All);
+        if (language is null) return;
+        var voices = playback.GetVoices(language.Code);
+        if (voices.Count == 0)
+        {
+            await DisplayAlertAsync("No voice available", "Download a voice for this language in iPhone Settings under Accessibility → Spoken Content (or Read & Speak) → Voices, then return to Koe.", "OK");
+            return;
+        }
+        var choices = voices.Select((voice, index) => $"{index + 1}. {voice.DisplayName}").ToArray();
+        var selected = await DisplayActionSheetAsync($"{language.Name} · {voices.Count} voices", "Cancel", null, choices);
+        var selection = Array.IndexOf(choices, selected);
+        if (selection < 0) return;
+        Preferences.Default.Set("koe.voice." + language.Code, voices[selection].Id);
+        try { playback.Speak(language.Greeting, language.Code, voices[selection].Id); }
+        catch (Exception ex) { SetStatus(ex.Message); }
     }
 
     async Task CopyTextAsync(string text)
@@ -280,6 +324,7 @@ public sealed class MainPage : ContentPage
 
     protected override void OnDisappearing()
     {
+        playback.Stop();
         if (!pickingAttachment) { pageVisible = false; operation?.Cancel(); recording.Suspend(); }
         base.OnDisappearing();
     }
@@ -341,7 +386,8 @@ public sealed class MainPage : ContentPage
     async Task ShowSettingsAsync()
     {
         var transliterationAction = showTransliteration ? "Hide transliteration" : "Show transliteration";
-        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", $"Text size · {TextSizeLabel}", transliterationAction);
+        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", "Speech voices", $"Text size · {TextSizeLabel}", transliterationAction);
+        if (choice == "Speech voices") { await ShowVoicesAsync(); return; }
         if (choice == "Conversation languages") { await ShowLanguagesAsync(); return; }
         if (choice == transliterationAction)
         {
@@ -454,6 +500,7 @@ public sealed class MainPage : ContentPage
             else
             {
                 draft.Unfocus();
+                playback.Stop();
                 await recording.StartAsync(CultureInfo.GetCultureInfo(SourceLanguage.Culture), operation.Token);
                 SetStatus(null);
             }
@@ -529,6 +576,7 @@ public sealed class MainPage : ContentPage
 
     void DiscardInput()
     {
+        playback.Stop();
         discardingInput = true;
         operation?.Cancel();
         recording.Clear();
