@@ -4,16 +4,18 @@ namespace Koe;
 
 public sealed class OpenAiVoicePage : ContentPage
 {
+    static readonly Color Ink = Color.FromArgb("#19384E"), Muted = Color.FromArgb("#4B6575");
     readonly OpenAiVoiceSettings settings;
     readonly Switch enabled;
     readonly Entry key = new()
     {
+        TextColor = Ink, PlaceholderColor = Muted, BackgroundColor = Colors.White,
         IsPassword = true, Placeholder = "Paste your OpenAI API key", Keyboard = Keyboard.Text,
         IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, ReturnType = ReturnType.Done
     };
-    readonly Picker voice = new() { Title = "OpenAI voice", ItemsSource = OpenAiSpeechClient.Voices };
-    readonly Label keyStatus = new() { FontSize = 13, TextColor = Color.FromArgb("#638295") };
-    readonly Button save = new() { Text = "Save", BackgroundColor = Color.FromArgb("#568FBE"), TextColor = Colors.White };
+    readonly Picker voice = new() { Title = "OpenAI voice", TextColor = Ink, TitleColor = Muted, BackgroundColor = Colors.White, ItemsSource = OpenAiSpeechClient.Voices };
+    readonly Label keyStatus = new() { FontSize = 13, TextColor = Muted };
+    readonly Button save = new() { Text = "Save", BackgroundColor = Color.FromArgb("#2D648E"), TextColor = Colors.White };
     bool confirming, saving, closing;
 
     public OpenAiVoicePage(OpenAiVoiceSettings settings)
@@ -30,7 +32,7 @@ public sealed class OpenAiVoicePage : ContentPage
         heading.Add(new Label { Text = "OpenAI voice", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#19384E"), VerticalTextAlignment = TextAlignment.Center }, 0, 0);
         heading.Add(close, 1, 0);
         var toggleRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        toggleRow.Add(new Label { Text = "Use OpenAI voice", FontSize = 17, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        toggleRow.Add(new Label { TextColor = Ink, Text = "Use OpenAI voice", FontSize = 17, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
         toggleRow.Add(enabled, 1, 0);
         SemanticProperties.SetDescription(enabled, "Use paid OpenAI speech instead of iPhone speech");
         enabled.Toggled += async (_, e) =>
@@ -79,14 +81,14 @@ public sealed class OpenAiVoicePage : ContentPage
             Padding = 20, Spacing = 14, Children =
             {
                 heading, toggleRow,
-                new Label { Text = "Off uses the iPhone voices. On uses an AI-generated OpenAI voice with additional API charges.", FontSize = 14 },
-                new Label { Text = "Set up step by step", FontSize = 18, FontAttributes = FontAttributes.Bold },
-                new Label { Text = "1. Sign in to the OpenAI API platform. Add a payment method or API credits if needed. Check your usage budget and billing settings.", FontSize = 14 }, billing,
-                new Label { Text = "2. Open API keys, select your project and choose Create new secret key. Give the key a name such as Koe voice, allow Realtime requests, and copy it. The full secret is normally shown only once.", FontSize = 14 }, keys,
-                new Label { Text = "3. Return to Koe and paste the key below. Choose a voice, turn on Use OpenAI voice, accept the cost notice, then tap Save.", FontSize = 14 },
+                new Label { TextColor = Ink, Text = "Off uses the iPhone voices. On uses an AI-generated OpenAI voice with additional API charges.", FontSize = 15, LineHeight = 1.15 },
+                new Label { TextColor = Ink, Text = "Set up step by step", FontSize = 18, FontAttributes = FontAttributes.Bold },
+                new Label { TextColor = Ink, Text = "1. Sign in to the OpenAI API platform. Add a payment method or API credits if needed. Check your usage budget and billing settings.", FontSize = 15, LineHeight = 1.15 }, billing,
+                new Label { TextColor = Ink, Text = "2. Open API keys, select your project and choose Create new secret key. Give the key a name such as Koe voice, allow Realtime requests, and copy it. The full secret is normally shown only once.", FontSize = 15, LineHeight = 1.15 }, keys,
+                new Label { TextColor = Ink, Text = "3. Return to Koe and paste the key below. Choose a voice, turn on Use OpenAI voice, accept the cost notice, then tap Save.", FontSize = 15, LineHeight = 1.15 },
                 key, keyStatus, voice,
-                new Label { Text = "4. Tap a speaker beside a chat message to listen. Tap it again to stop. Turn this setting off at any time to return to iPhone voices.", FontSize = 14 },
-                new Label { Text = "Your personal key is stored in the iPhone Keychain. Leave the field empty to keep a saved key. Never share it in chat or screenshots. No audio is generated just by saving these settings.", FontSize = 13, TextColor = Color.FromArgb("#638295") },
+                new Label { TextColor = Ink, Text = "4. Tap a speaker beside a chat message to listen. Tap it again to stop. Turn this setting off at any time to return to iPhone voices.", FontSize = 15, LineHeight = 1.15 },
+                new Label { Text = "Your personal key is stored in the iPhone Keychain. Leave the field empty to keep a saved key. Never share it in chat or screenshots. No audio is generated just by saving these settings.", FontSize = 13, TextColor = Muted },
                 pricing, save, remove
             }
         };

@@ -312,13 +312,11 @@ public sealed class MainPage : ContentPage
         var voices = playback.GetVoices(language.Code);
         if (voices.Count == 0)
         {
-            await ShowIphoneVoiceSettingsAsync(language.Name);
+            await DisplayAlertAsync("No iPhone voice available", "No iPhone voice is available for this language. You can enable OpenAI voice in Koe Settings instead.", "OK");
             return;
         }
-        const string addVoices = "Add iPhone voices…";
-        var choices = voices.Select((voice, index) => $"{index + 1}. {voice.DisplayName}").Append(addVoices).ToArray();
+        var choices = voices.Select((voice, index) => $"{index + 1}. {voice.DisplayName}").ToArray();
         var selected = await DisplayActionSheetAsync($"{language.Name} · {voices.Count} voices", "Cancel", null, choices);
-        if (selected == addVoices) { await ShowIphoneVoiceSettingsAsync(language.Name); return; }
         var selection = Array.IndexOf(choices, selected);
         if (selection < 0) return;
         Preferences.Default.Set("koe.voice." + language.Code, voices[selection].Id);
@@ -331,25 +329,6 @@ public sealed class MainPage : ContentPage
         ++playbackRevision;
         playback.Stop();
         await Navigation.PushModalAsync(new OpenAiVoicePage(voiceSettings));
-    }
-
-    async Task ShowIphoneVoiceSettingsAsync(string? languageName = null)
-    {
-        if (DeviceInfo.Platform != DevicePlatform.iOS)
-        {
-            await DisplayAlertAsync("iPhone voices", "Additional voices can be managed in the iPhone Settings app.", "OK");
-            return;
-        }
-        var languageHint = languageName is null ? "Choose your language" : $"Choose {languageName}";
-        var open = await DisplayAlertAsync("Add iPhone voices",
-            "In iPhone Settings, go to:\n\nAccessibility → Read & Speak (or Spoken Content) → Voices.\n\n" +
-            languageHint + " and download an available voice. Then return to Koe and reopen Speech voices to refresh the list.\n\n" +
-            "Open settings takes you to Koe's app settings. Go back to the main Settings screen to find Accessibility.",
-            "Open settings", "Close");
-        if (!open) return;
-        playback.Stop();
-        try { AppInfo.Current.ShowSettingsUI(); }
-        catch { SetStatus("Please open iPhone Settings manually, then Accessibility → Read & Speak → Voices."); }
     }
 
     async Task CopyTextAsync(string text)
@@ -477,9 +456,8 @@ public sealed class MainPage : ContentPage
     {
         var transliterationAction = showTransliteration ? "Hide transliteration" : "Show transliteration";
         var openAiAction = "OpenAI voice · " + (voiceSettings.Enabled ? "On" : "Off");
-        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", openAiAction, "Speech voices", "Add iPhone voices…", $"Text size · {TextSizeLabel}", transliterationAction);
+        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", openAiAction, "Speech voices", $"Text size · {TextSizeLabel}", transliterationAction);
         if (choice == openAiAction) { await ShowOpenAiVoiceSettingsAsync(); return; }
-        if (choice == "Add iPhone voices…") { await ShowIphoneVoiceSettingsAsync(); return; }
         if (choice == "Speech voices") { await ShowVoicesAsync(); return; }
         if (choice == "Conversation languages") { await ShowLanguagesAsync(); return; }
         if (choice == transliterationAction)
