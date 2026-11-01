@@ -742,6 +742,80 @@ await Check("Automatic speech handles duplicates and invalid evidence without a 
     if (new SpeechRecognitionCandidate(culture, "bad", double.NaN, double.PositiveInfinity).Score != 0) throw new Exception();
     await Reject(() => AutomaticSpeechRecognition.RecognizeAsync([culture], (locale, ct) => Task.FromResult<SpeechRecognitionCandidate?>(new(CultureInfo.GetCultureInfo("ja-JP"), "wrong locale", 1, 1)), default));
 });
+await Check("AI live transcription is visible before pause or send and retains a typed prefix", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    var languages = new[] { CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP") };
+    draft.Edit("My question:");
+    await draft.StartAsync(languages[0], default, languages);
+    speech.Emit("Wo ist");
+    if (!draft.IsRecording || draft.Text != "My question: Wo ist") throw new Exception("AI waited until pause to show text.");
+    speech.Emit("Wo ist der Bahnhof?");
+    if (draft.Text != "My question: Wo ist der Bahnhof?") throw new Exception("Partial text was appended twice.");
+    await draft.PauseAsync();
+    if (draft.Text != "My question: Wo ist der Bahnhof?" || draft.IsRecording) throw new Exception();
+    speech.Emit("late result");
+    if (draft.Text != "My question: Wo ist der Bahnhof?") throw new Exception();
+});
+await Check("AI live language correction replaces the preview without duplicating or losing the typed draft", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    draft.Edit("Question:");
+    await draft.StartAsync(CultureInfo.GetCultureInfo("de-DE"), default, [CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP")]);
+    speech.Emit("initial guess"); speech.Emit("京都への道を教えてください");
+    if (draft.Text != "Question: 京都への道を教えてください") throw new Exception();
+    speech.Emit("");
+    if (draft.Text != "Question: 京都への道を教えてください") throw new Exception("Silence erased the AI preview.");
+    draft.Edit("Question: 京都駅への道を教えてください"); speech.Emit("older recognition");
+    await draft.PauseAsync();
+    if (draft.Text != "Question: 京都駅への道を教えてください") throw new Exception("Recognition undid an edit.");
+});
+await Check("Live preview updates one segment and retains the complete sentence during audio replay", () =>
+{
+    var preview = new LiveSpeechPreview(); var first = preview.BeginSegment(true);
+    if (!preview.Update(first, "Where is") || !preview.Update(first, "Where is the station?")) throw new Exception();
+    var replay = preview.BeginSegment(true);
+    if (preview.Text != "Where is the station?" || preview.Update(first, "stale words")) throw new Exception();
+    if (preview.Update(replay, "Where") || preview.Text != "Where is the station?") throw new Exception("Replay shrank the visible draft.");
+    if (!preview.Update(replay, "Where is the station? Please help.") || preview.Text != "Where is the station? Please help.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("A detected language change replaces rather than appends the replayed utterance", () =>
+{
+    var preview = new LiveSpeechPreview(); var first = preview.BeginSegment(true);
+    preview.Update(first, "an initial German guess");
+    var japanese = preview.BeginSegment(true);
+    if (!preview.Update(japanese, "京都への道を教えてください") || preview.Text != "京都への道を教えてください") throw new Exception();
+    if (preview.Update(first, "late German result") || preview.Update(japanese, "")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Restarting native recognition after a silence keeps earlier AI words", () =>
+{
+    var preview = new LiveSpeechPreview(); var first = preview.BeginSegment(true);
+    preview.Update(first, "Please show me the station.");
+    var resumed = preview.BeginSegment(false);
+    if (preview.Update(resumed, " ") || preview.Text != "Please show me the station.") throw new Exception();
+    preview.Update(resumed, "I am walking."); preview.Update(resumed, "I am walking with a friend.");
+    if (preview.Text != "Please show me the station. I am walking with a friend.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Stopping or clearing a live preview ignores already queued native results", () =>
+{
+    var preview = new LiveSpeechPreview(); var first = preview.BeginSegment(true);
+    preview.Update(first, "Keep me"); preview.Invalidate();
+    if (preview.Update(first, "late callback") || preview.Text != "Keep me") throw new Exception();
+    var next = preview.BeginSegment(false); preview.Clear();
+    if (preview.Update(next, "resurrected words") || preview.Text != "") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Initial live locale follows the device or the selected pair, independently of the last speaker", () =>
+{
+    var de = CultureInfo.GetCultureInfo("de-DE"); var ja = CultureInfo.GetCultureInfo("ja-JP"); var swiss = CultureInfo.GetCultureInfo("de-CH");
+    if (AutomaticSpeechRecognition.InitialCulture([de, ja], ja) != ja || AutomaticSpeechRecognition.InitialCulture([ja, de], swiss) != de ||
+        AutomaticSpeechRecognition.InitialCulture([ja, de], CultureInfo.GetCultureInfo("fr-FR")) != ja ||
+        AutomaticSpeechRecognition.InitialCulture([de, swiss], swiss) != swiss) throw new Exception();
+    return Task.CompletedTask;
+});
 await Check("AI automatic speech keeps typed prefixes, supports pause and resume, and uses both selected locales", async () =>
 {
     var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);

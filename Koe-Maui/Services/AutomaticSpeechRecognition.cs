@@ -10,6 +10,11 @@ public sealed record SpeechRecognitionCandidate(CultureInfo Culture, string Text
 
 public static class AutomaticSpeechRecognition
 {
+    public static CultureInfo InitialCulture(IReadOnlyList<CultureInfo> cultures, CultureInfo deviceCulture)
+        => cultures.FirstOrDefault(x => x.Name.Equals(deviceCulture.Name, StringComparison.OrdinalIgnoreCase))
+            ?? cultures.FirstOrDefault(x => x.TwoLetterISOLanguageName == deviceCulture.TwoLetterISOLanguageName)
+            ?? cultures[0];
+
     // Native recognizers need an explicit locale. Reusing one recording in
     // sequential passes keeps task lifetimes and cleanup isolated.
     public static async Task<SpeechRecognitionCandidate> RecognizeAsync(IReadOnlyList<CultureInfo> cultures,

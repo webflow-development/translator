@@ -27,6 +27,7 @@ public sealed class IosSpeechCapture : ISpeechCapture
 
     public IosSpeechCapture()
     {
+        automatic.TranscriptChanged += text => { if (usingAutomatic) TranscriptChanged?.Invoke(text); };
         automatic.Stopped += error => { if (usingAutomatic) Stopped?.Invoke(error); };
     }
 

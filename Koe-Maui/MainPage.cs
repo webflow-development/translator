@@ -812,7 +812,7 @@ public sealed class MainPage : ContentPage
             prompt.Text = recognizingSpeech ? "AI · detecting language …" : busy ? "AI · one moment …" : recording.IsRecording ? "AI · auto language · speak now" : recording.HasTurn ? "AI · recording paused" : "AI · auto language · ready";
             if (recognizingSpeech) hint.Text = "Recognizing speech in the two selected languages.";
             else if (busy) hint.Text = "AI is answering in both languages.";
-            else if (recording.IsRecording) hint.Text = "Speak in either language. Text appears when you pause or send.";
+            else if (recording.IsRecording) hint.Text = "Live text · language is checked automatically.";
             else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
         }
         SemanticProperties.SetDescription(send, mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
