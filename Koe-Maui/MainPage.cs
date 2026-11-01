@@ -133,29 +133,16 @@ public sealed class MainPage : ContentPage
         };
         var languages = new Grid
         {
-            ColumnSpacing = 2,
+            ColumnSpacing = 6,
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto),
-                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto),
                 new ColumnDefinition(GridLength.Star)
             }
         };
-        var firstAiArrow = new Label
-        {
-            Text = "→", FontSize = 20, WidthRequest = 18, TextColor = Blue, InputTransparent = true,
-            HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center
-        };
-        var secondAiArrow = new Label
-        {
-            Text = "←", FontSize = 20, WidthRequest = 18, TextColor = Blue, InputTransparent = true,
-            HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center
-        };
         languages.Add(firstSpeaker, 0, 0);
-        languages.Add(firstAiArrow, 1, 0);
-        languages.Add(aiSpeaker, 2, 0);
-        languages.Add(secondAiArrow, 3, 0);
-        languages.Add(secondSpeaker, 4, 0);
+        languages.Add(aiSpeaker, 1, 0);
+        languages.Add(secondSpeaker, 2, 0);
         var input = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         input.Add(attach, 0, 0); input.Add(draft, 1, 0);
         var attachmentRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
