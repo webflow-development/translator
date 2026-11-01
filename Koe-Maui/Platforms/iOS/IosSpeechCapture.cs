@@ -8,6 +8,9 @@ namespace Koe.Platforms.iOS;
 
 public sealed class IosSpeechCapture : ISpeechCapture
 {
+    readonly IosAutomaticSpeechCapture automatic = new();
+    bool usingAutomatic;
+    bool fixedRecording;
     AVAudioEngine? engine;
     SFSpeechRecognizer? recognizer;
     SFSpeechAudioBufferRecognitionRequest? request;
@@ -18,9 +21,22 @@ public sealed class IosSpeechCapture : ISpeechCapture
     string transcript = "";
     TaskCompletionSource? finalResult;
     bool finishing;
-    public bool IsRecording { get; private set; }
+    public bool IsRecording { get => usingAutomatic ? automatic.IsRecording : fixedRecording; private set => fixedRecording = value; }
     public event Action<string>? TranscriptChanged;
     public event Action<string?>? Stopped;
+
+    public IosSpeechCapture()
+    {
+        automatic.Stopped += error => { if (usingAutomatic) Stopped?.Invoke(error); };
+    }
+
+    public async Task StartAutomaticAsync(IReadOnlyList<CultureInfo> cultures)
+    {
+        Stop();
+        usingAutomatic = true;
+        try { await automatic.StartAsync(cultures); }
+        catch { Stop(); throw; }
+    }
 
     public async Task StartAsync(CultureInfo culture)
     {
@@ -84,6 +100,7 @@ public sealed class IosSpeechCapture : ISpeechCapture
 
     public async Task<string> FinishAsync(CancellationToken cancellationToken = default)
     {
+        if (usingAutomatic) return await automatic.FinishAsync(cancellationToken);
         if (!IsRecording) return transcript;
         finishing = true;
         finalResult = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -103,6 +120,7 @@ public sealed class IosSpeechCapture : ISpeechCapture
 
     public void Stop()
     {
+        if (usingAutomatic) { automatic.Stop(); usingAutomatic = false; }
         generation++;
         var hadSession = engine is not null;
         if (engine?.Running == true) engine.Stop();

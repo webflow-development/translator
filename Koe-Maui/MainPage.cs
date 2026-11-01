@@ -79,7 +79,7 @@ public sealed class MainPage : ContentPage
     readonly Border signInCard;
     readonly Border shutterRing;
     CancellationTokenSource? operation;
-    bool busy, pageVisible, syncingDraft, pausingForEdit;
+    bool busy, pageVisible, syncingDraft, pausingForEdit, recognizingSpeech;
     bool discardingInput;
     readonly ConversationMode mode = new();
     ConversationLanguage first = ConversationLanguage.Get(Preferences.Default.Get("koe.language.first", "en"));
@@ -191,7 +191,7 @@ public sealed class MainPage : ContentPage
         };
         firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(true, first.Code); SetStatus(null); UpdateControls(); } };
         secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(false, second.Code); SetStatus(null); UpdateControls(); } };
-        aiSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectAi(first, second); SetStatus(null); UpdateControls(); } };
+        aiSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectAi(); SetStatus(null); UpdateControls(); } };
         draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
         draft.Focused += async (_, _) =>
         {
@@ -456,10 +456,12 @@ public sealed class MainPage : ContentPage
     {
         if (busy) return;
         draft.Unfocus();
+        recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; pickingAttachment = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             if (recording.IsRecording) await recording.PauseAsync(operation.Token);
+            recognizingSpeech = false; UpdateControls();
             var choice = await DisplayActionSheetAsync("Add image", "Cancel", null, "Choose photo", "Camera", "Choose image file");
             FileResult? file = null;
             switch (choice)
@@ -614,6 +616,7 @@ public sealed class MainPage : ContentPage
     async Task TogglePauseAsync()
     {
         if (busy || !auth.IsConnected) return;
+        recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
@@ -627,7 +630,8 @@ public sealed class MainPage : ContentPage
                 draft.Unfocus();
                 ++playbackRevision;
                 playback.Stop();
-                await recording.StartAsync(CultureInfo.GetCultureInfo(SourceLanguage.Culture), operation.Token);
+                await recording.StartAsync(CultureInfo.GetCultureInfo(SourceLanguage.Culture), operation.Token,
+                    mode.IsAi ? [CultureInfo.GetCultureInfo(first.Culture), CultureInfo.GetCultureInfo(second.Culture)] : null);
                 SetStatus(null);
             }
         }
@@ -649,10 +653,12 @@ public sealed class MainPage : ContentPage
         if (busy || !auth.IsConnected || (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null)) return;
         draft.Unfocus();
         ++playbackRevision; playback.Stop();
+        recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
             var text = (await recording.FinishAsync(operation.Token)).Trim();
+            recognizingSpeech = false; UpdateControls();
             if (string.IsNullOrWhiteSpace(text) && pendingImage is null) { SetStatus("No speech detected. Tap the microphone to try again."); return; }
             if (mode.IsAi)
             {
@@ -732,12 +738,14 @@ public sealed class MainPage : ContentPage
     async Task AskAiDraftAsync(string text, CancellationToken ct)
     {
         SetStatus("AI is answering …");
-        var primary = SourceLanguage; var secondary = TargetLanguage;
         var image = pendingImage;
-        var reply = await WithPreviewAsync(ct, $"AI · {primary.Name} / {secondary.Name}", preview =>
-            translator.AskAsync(text, primary, secondary, AiContext(), ct, image, preview, showTransliteration, selectedModelId));
+        var reply = await WithPreviewAsync(ct, "AI · automatic language detection", preview =>
+            translator.AskAsync(text, first, second, AiContext(), ct, image, preview, showTransliteration, selectedModelId));
         ct.ThrowIfCancellationRequested();
-        turns.Add(new(primary.Name, "", text, "", "", "", image, Kind: ConversationTurnKind.AiQuestion));
+        var primary = reply.FirstLanguageCode == first.Code ? first : second;
+        var secondary = primary.Code == first.Code ? second : first;
+        var inputLanguage = ConversationLanguage.All.FirstOrDefault(x => x.Code == reply.InputLanguageCode)?.Name ?? "Auto-detected";
+        turns.Add(new(inputLanguage, "", text, "", "", "", image, Kind: ConversationTurnKind.AiQuestion));
         turns.Add(new(primary.Name, secondary.Name, reply.FirstAnswer, reply.SecondAnswer, reply.FirstTransliteration, reply.SecondTransliteration, Kind: ConversationTurnKind.AiAnswer));
         mode.CompleteTurn(first, primary.Code);
         recording.Clear(); SetAttachment(null);
@@ -760,7 +768,7 @@ public sealed class MainPage : ContentPage
 
     void FinishOperation()
     {
-        operation?.Dispose(); operation = null; busy = false;
+        operation?.Dispose(); operation = null; busy = false; recognizingSpeech = false;
         if (discardingInput)
         {
             recording.Clear(); SyncDraft(); SetAttachment(null);
@@ -773,14 +781,14 @@ public sealed class MainPage : ContentPage
     void UpdateControls()
     {
         draft.Placeholder = mode.IsAi ? "Ask AI …" : "Type a message …";
-        welcomeHint.Text = mode.IsAi ? "Ask AI by voice or text, or add a photo.\nReplies appear in both languages." : "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.";
+        welcomeHint.Text = mode.IsAi ? "Ask AI in either selected language.\nLanguage is detected automatically.\nReplies appear in both languages." : "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.";
         attachmentHint.Text = mode.IsAi ? "Ask AI about this image" : "Translate image text + your message";
         livePreview.BackgroundColor = mode.IsAi ? Color.FromArgb("#DDF1DF") : Colors.White;
         firstGreeting.Text = first.Greeting;
         secondGreeting.Text = second.Greeting;
         account.Text = auth.IsConnected ? "● ChatGPT connected" : "○ ChatGPT not connected";
         account.TextColor = auth.IsConnected ? Color.FromArgb("#28774E") : Muted;
-        draft.PreferredCulture = SourceLanguage.Culture;
+        draft.PreferredCulture = mode.IsAi ? "" : SourceLanguage.Culture;
         modelPicker.IsVisible = auth.IsConnected;
         modelPicker.IsEnabled = auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && modelPicker.ItemsSource is { Count: > 0 };
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
@@ -801,8 +809,10 @@ public sealed class MainPage : ContentPage
         hint.Text = busy ? "Processing your message." : recording.IsRecording ? "Microphone: pause · ↑: send" : recording.HasTurn ? "Resume on the left · send on the right" : "Microphone: record · ↑: send";
         if (mode.IsAi)
         {
-            prompt.Text = busy ? "AI · one moment …" : recording.IsRecording ? $"AI · {SourceLanguage.Name} · speak now" : recording.HasTurn ? "AI · recording paused" : $"AI · {SourceLanguage.Name} · ready";
-            if (busy) hint.Text = "AI is answering in both languages.";
+            prompt.Text = recognizingSpeech ? "AI · detecting language …" : busy ? "AI · one moment …" : recording.IsRecording ? "AI · auto language · speak now" : recording.HasTurn ? "AI · recording paused" : "AI · auto language · ready";
+            if (recognizingSpeech) hint.Text = "Recognizing speech in the two selected languages.";
+            else if (busy) hint.Text = "AI is answering in both languages.";
+            else if (recording.IsRecording) hint.Text = "Speak in either language. Text appears when you pause or send.";
             else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
         }
         SemanticProperties.SetDescription(send, mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
@@ -816,7 +826,7 @@ public sealed class MainPage : ContentPage
         SemanticProperties.SetDescription(firstSpeaker, $"{first.Name}, " + (!mode.IsAi && mode.FromFirst ? "active speaker" : "select speaker"));
         SemanticProperties.SetDescription(secondSpeaker, $"{second.Name}, " + (!mode.IsAi && !mode.FromFirst ? "active speaker" : "select speaker"));
         aiSpeaker.BackgroundColor = mode.IsAi ? Color.FromArgb("#BFE5CA") : Colors.White;
-        SemanticProperties.SetDescription(aiSpeaker, mode.IsAi ? $"AI mode active, input in {SourceLanguage.Name}" : "Ask AI in both conversation languages");
+        SemanticProperties.SetDescription(aiSpeaker, mode.IsAi ? "AI mode active, automatic language detection" : "Ask AI in both conversation languages");
         firstSpeaker.IsEnabled = secondSpeaker.IsEnabled = aiSpeaker.IsEnabled = !busy && !recording.HasTurn;
         var hasInput = recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null;
         cancel.Text = hasInput ? "×  Discard input" : "Cancel";

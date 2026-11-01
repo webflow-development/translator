@@ -27,7 +27,7 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
         var model = TranslationModel.Resolve(catalog, modelId);
         var payload = AiChatRequest.Build(model.Id, question, first, second, history, image, includeTransliteration);
         var json = await CompleteAsync(token, payload, ct, onPreview, "first_answer", "second_answer");
-        return AiReply.Parse(json, includeTransliteration);
+        return AiReply.Parse(json, includeTransliteration, first, second);
     }
 
     async Task<string> CompleteAsync(string token, byte[] payload, CancellationToken ct,

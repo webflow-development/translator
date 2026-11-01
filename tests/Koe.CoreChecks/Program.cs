@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -608,78 +609,164 @@ await Check("OpenAI speech keeps the Swiss regional language in its reading inst
     if (!session.RootElement.GetProperty("session").GetProperty("instructions").GetString()!.Contains("German (Switzerland)")) throw new Exception();
     return Task.CompletedTask;
 });
-await Check("AI mode uses the last German speaker instead of the auto-selected next Japanese speaker", () =>
+await Check("AI mode does not inherit the last speaker or alter normal turn switching", () =>
 {
-    var mode = new ConversationMode(); var de = ConversationLanguage.Get("de"); var ja = ConversationLanguage.Get("ja");
+    var mode = new ConversationMode(); var de = ConversationLanguage.Get("de");
     mode.CompleteTurn(de, de.Code);
-    if (mode.FromFirst || mode.IsAi) throw new Exception("Translation did not switch speakers.");
-    mode.SelectAi(de, ja);
-    if (!mode.IsAi || !mode.FromFirst || mode.LastSpeakerCode != "de") throw new Exception();
-    mode.CompleteTurn(de, de.Code);
-    if (!mode.IsAi || !mode.FromFirst) throw new Exception("AI unexpectedly switched input languages.");
+    if (mode.FromFirst || mode.IsAi) throw new Exception();
+    mode.SelectAi();
+    if (!mode.IsAi || mode.FromFirst) throw new Exception("AI reset the waiting speaker to the last speaker.");
+    mode.SelectSpeaker(true, de.Code); mode.CompleteTurn(de, de.Code);
+    if (mode.IsAi || mode.FromFirst) throw new Exception("Normal turn switching was lost.");
     return Task.CompletedTask;
 });
-await Check("AI puts the last Japanese speaker first and a language tap returns to translation", () =>
+await Check("AI mode stays automatic across follow-ups and pair changes reset it", () =>
 {
-    var mode = new ConversationMode(); var de = ConversationLanguage.Get("de"); var ja = ConversationLanguage.Get("ja");
-    mode.SelectSpeaker(false, ja.Code); mode.CompleteTurn(de, ja.Code); mode.SelectAi(de, ja);
-    if (!mode.IsAi || mode.FromFirst) throw new Exception();
-    mode.SelectSpeaker(true, de.Code);
-    if (mode.IsAi || !mode.FromFirst) throw new Exception();
-    mode.CompleteTurn(de, de.Code);
-    if (mode.FromFirst) throw new Exception("Normal turn switching was lost.");
-    return Task.CompletedTask;
-});
-await Check("Changing conversation languages resets AI input order and mode", () =>
-{
-    var mode = new ConversationMode(); var de = ConversationLanguage.Get("de"); var ja = ConversationLanguage.Get("ja");
-    mode.SelectSpeaker(false, ja.Code); mode.SelectAi(de, ja); mode.Reset();
+    var mode = new ConversationMode(); var de = ConversationLanguage.Get("de");
+    mode.SelectAi(); mode.CompleteTurn(de, "ja");
+    if (!mode.IsAi || !mode.FromFirst) throw new Exception();
+    mode.Reset();
     if (mode.IsAi || !mode.FromFirst || mode.LastSpeakerCode is not null) throw new Exception();
-    mode.SelectAi(ConversationLanguage.Get("es"), ConversationLanguage.Get("de-CH"));
-    if (!mode.FromFirst) throw new Exception("Old language order leaked into a new pair.");
     return Task.CompletedTask;
 });
-await Check("AI reply retains two independent answers and romanizations in caller-defined order", () =>
+await Check("AI detects Japanese and places its answer and romanization first", () =>
 {
     var reply = AiReply.Parse("""
-    {"first_answer":"水を飲んでください。","second_answer":"Bitte trink Wasser.","first_transliteration":"Mizu o nonde kudasai.","second_transliteration":""}
-    """, true);
-    if (reply.FirstAnswer != "水を飲んでください。" || reply.SecondAnswer != "Bitte trink Wasser." || reply.FirstTransliteration != "Mizu o nonde kudasai." || reply.SecondTransliteration != "") throw new Exception();
+    {"input_language":"ja-JP","first_language":"ja","first_answer":"水を飲んでください。","second_answer":"Bitte trink Wasser.","first_transliteration":"Mizu o nonde kudasai.","second_transliteration":""}
+    """, true, ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"));
+    if (reply.FirstLanguageCode != "ja" || reply.InputLanguageCode != "ja" || reply.FirstAnswer != "水を飲んでください。" || reply.FirstTransliteration != "Mizu o nonde kudasai." || reply.SecondTransliteration != "") throw new Exception();
     return Task.CompletedTask;
 });
-await Check("AI respects disabled transliteration even if a response includes readings", () =>
+await Check("AI detects German independently for the next question", () =>
 {
     var reply = AiReply.Parse("""
-    {"first_answer":"こんにちは","second_answer":"Hello","first_transliteration":"Konnichiwa","second_transliteration":"Hello"}
-    """, false);
-    if (reply.FirstTransliteration != "" || reply.SecondTransliteration != "" || reply.FirstAnswer != "こんにちは") throw new Exception();
+    {"input_language":"de-DE","first_language":"de","first_answer":"Hallo","second_answer":"こんにちは","first_transliteration":"","second_transliteration":"Konnichiwa"}
+    """, true, ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"));
+    if (reply.FirstLanguageCode != "de" || reply.InputLanguageCode != "de" || reply.SecondTransliteration != "Konnichiwa") throw new Exception();
     return Task.CompletedTask;
 });
+await Check("AI respects disabled readings and preserves the detected Swiss regional identifier", () =>
+{
+    var reply = AiReply.Parse("""
+    {"input_language":"de","first_language":"de-CH","first_answer":"Grüezi","second_answer":"こんにちは","first_transliteration":"Gruezi","second_transliteration":"Konnichiwa"}
+    """, false, ConversationLanguage.Get("ja"), ConversationLanguage.Get("de-CH"));
+    if (reply.FirstLanguageCode != "de-CH" || reply.InputLanguageCode != "de-CH" || reply.FirstTransliteration != "" || reply.SecondTransliteration != "") throw new Exception();
+    return Task.CompletedTask;
+});
+foreach (var detected in new[] { "", "en", "und" })
+    await Check("Unknown, image-only and third-language AI input use a stable first selected answer language", () =>
+    {
+        var json = JsonSerializer.Serialize(new { input_language = detected, first_language = "de", first_answer = "Hallo", second_answer = "こんにちは", first_transliteration = "", second_transliteration = "Konnichiwa" });
+        var reply = AiReply.Parse(json, true, ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"));
+        if (reply.FirstLanguageCode != "de" || reply.InputLanguageCode != detected) throw new Exception();
+        return Task.CompletedTask;
+    });
 foreach (var bad in new[]
 {
     "{}", "[]", "null", "not json",
-    "{\"first_answer\":\"Hello\",\"second_answer\":\"\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
-    "{\"first_answer\":\"Hello\",\"second_answer\":42,\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
-    "{\"first_answer\":\"Hello\",\"second_answer\":\"Hallo\",\"first_transliteration\":\"\"}"
+    "{\"input_language\":\"de\",\"first_language\":\"de\",\"first_answer\":\"Hello\",\"second_answer\":\"\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
+    "{\"input_language\":\"de\",\"first_language\":\"de\",\"first_answer\":\"Hello\",\"second_answer\":42,\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
+    "{\"input_language\":\"de\",\"first_language\":\"de\",\"first_answer\":\"Hello\",\"second_answer\":\"Hallo\",\"first_transliteration\":\"\"}",
+    "{\"first_answer\":\"Hello\",\"second_answer\":\"Hallo\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
+    "{\"input_language\":\"ja\",\"first_language\":\"de\",\"first_answer\":\"Hallo\",\"second_answer\":\"Hello\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
+    "{\"input_language\":\"fr\",\"first_language\":\"fr\",\"first_answer\":\"Bonjour\",\"second_answer\":\"Hallo\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}",
+    "{\"input_language\":null,\"first_language\":\"de\",\"first_answer\":\"Hallo\",\"second_answer\":\"Hello\",\"first_transliteration\":\"\",\"second_transliteration\":\"\"}"
 })
-    await Check("Malformed or incomplete bilingual AI answer is rejected", () => Reject(() => { AiReply.Parse(bad, true); return Task.CompletedTask; }));
-await Check("AI requests answer questions using the selected model and preserve the account flow requirements", () =>
+    await Check("Malformed, incomplete or wrongly ordered automatic AI answer is rejected", () => Reject(() => { AiReply.Parse(bad, true, ConversationLanguage.Get("de"), ConversationLanguage.Get("ja")); return Task.CompletedTask; }));
+await Check("AI requests detect only the latest question language in one Responses request", () =>
 {
     using var request = JsonDocument.Parse(AiChatRequest.Build("chosen-model", "Was bedeutet das?", ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"), []));
     var root = request.RootElement;
     if (root.GetProperty("model").GetString() != "chosen-model" || root.GetProperty("store").GetBoolean() || !root.GetProperty("stream").GetBoolean()) throw new Exception();
     if (root.TryGetProperty("previous_response_id", out _) || root.TryGetProperty("conversation", out _) || root.TryGetProperty("max_output_tokens", out _)) throw new Exception();
     var instructions = root.GetProperty("instructions").GetString()!;
-    if (!instructions.Contains("Answer the user's latest question") || !instructions.Contains("in German (code de)") || !instructions.Contains("in Japanese (code ja)")) throw new Exception();
-    if (root.GetProperty("text").GetProperty("format").GetProperty("name").GetString() != "koe_ai_reply" || root.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString() != "Was bedeutet das?") throw new Exception();
+    if (!instructions.Contains("Answer the user's latest question") || !instructions.Contains("German (code de)") || !instructions.Contains("Japanese (code ja)") ||
+        !instructions.Contains("Automatically detect input_language") || !instructions.Contains("Never assume its language from earlier speakers")) throw new Exception();
+    var format = root.GetProperty("text").GetProperty("format");
+    var schema = format.GetProperty("schema");
+    if (format.GetProperty("name").GetString() != "koe_ai_reply" || !format.GetProperty("strict").GetBoolean() ||
+        schema.GetProperty("properties").GetProperty("first_language").GetProperty("enum").EnumerateArray().Select(x => x.GetString()).SequenceEqual(new[] { "de", "ja" }) == false ||
+        schema.GetProperty("required").GetArrayLength() != 6 || schema.GetProperty("additionalProperties").GetBoolean()) throw new Exception();
+    if (root.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString() != "Was bedeutet das?") throw new Exception();
     return Task.CompletedTask;
 });
-await Check("AI requests keep Japanese first when it is the input language and support Swiss spelling", () =>
+await Check("AI language detection supports Swiss spelling without requiring a previous input locale", () =>
 {
     using var request = JsonDocument.Parse(AiChatRequest.Build("test", "質問", ConversationLanguage.Get("ja"), ConversationLanguage.Get("de-CH"), []));
     var instructions = request.RootElement.GetProperty("instructions").GetString()!;
-    if (!instructions.Contains("first_answer is your answer in Japanese") || !instructions.Contains("in German (Switzerland)") || !instructions.Contains("ss instead of ß")) throw new Exception();
+    if (!instructions.Contains("Japanese (code ja)") || !instructions.Contains("German (Switzerland)") || !instructions.Contains("ss instead of ß") || !instructions.Contains("first_language to ja")) throw new Exception();
     return Task.CompletedTask;
+});
+await Check("Automatic speech tries both locales sequentially and chooses recognition confidence over pair order", async () =>
+{
+    var cultures = new[] { CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP") };
+    var active = false; var calls = new List<string>();
+    var result = await AutomaticSpeechRecognition.RecognizeAsync(cultures, async (culture, ct) =>
+    {
+        if (active) throw new Exception("Recognition passes overlapped.");
+        active = true; calls.Add(culture.Name); await Task.Yield(); active = false;
+        return culture.Name == "ja-JP" ? new(culture, "  京都への道を教えてください  ", .9, .95) : new SpeechRecognitionCandidate(culture, "wrong guess", .2, .3);
+    }, default);
+    if (result.Culture.Name != "ja-JP" || result.Text != "京都への道を教えてください" || !calls.SequenceEqual(new[] { "de-DE", "ja-JP" })) throw new Exception();
+});
+await Check("Automatic speech skips a failed locale and never invents text from silence", async () =>
+{
+    var cultures = new[] { CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP") };
+    var result = await AutomaticSpeechRecognition.RecognizeAsync(cultures, (culture, ct) => culture.Name == "de-DE"
+        ? Task.FromException<SpeechRecognitionCandidate?>(new TimeoutException())
+        : Task.FromResult<SpeechRecognitionCandidate?>(new(culture, "こんにちは", .8, .9)), default);
+    if (result.Culture.Name != "ja-JP") throw new Exception();
+    await Reject(() => AutomaticSpeechRecognition.RecognizeAsync(cultures, (culture, ct) => Task.FromResult<SpeechRecognitionCandidate?>(new(culture, " ", .9, .9)), default));
+    await Reject(() => AutomaticSpeechRecognition.RecognizeAsync(cultures, (culture, ct) => Task.FromResult<SpeechRecognitionCandidate?>(null), default));
+});
+await Check("Automatic speech cancels before another pass and rejects results after cancellation", async () =>
+{
+    using var cancel = new CancellationTokenSource(); var calls = 0;
+    try
+    {
+        await AutomaticSpeechRecognition.RecognizeAsync([CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP")], (culture, ct) =>
+        {
+            calls++; cancel.Cancel(); return Task.FromResult<SpeechRecognitionCandidate?>(new(culture, "must not commit", .9, .9));
+        }, cancel.Token);
+        throw new Exception("Cancellation was ignored.");
+    }
+    catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
+    if (calls != 1) throw new Exception();
+});
+await Check("Automatic speech handles duplicates and invalid evidence without a stale language preference", async () =>
+{
+    var culture = CultureInfo.GetCultureInfo("de-CH"); var calls = 0;
+    var result = await AutomaticSpeechRecognition.RecognizeAsync([culture, culture], (locale, ct) =>
+    { calls++; return Task.FromResult<SpeechRecognitionCandidate?>(new(locale, "Grüezi", .8, .8)); }, default);
+    if (calls != 1 || result.Culture.Name != "de-CH") throw new Exception();
+    if (new SpeechRecognitionCandidate(culture, "bad", double.NaN, double.PositiveInfinity).Score != 0) throw new Exception();
+    await Reject(() => AutomaticSpeechRecognition.RecognizeAsync([culture], (locale, ct) => Task.FromResult<SpeechRecognitionCandidate?>(new(CultureInfo.GetCultureInfo("ja-JP"), "wrong locale", 1, 1)), default));
+});
+await Check("AI automatic speech keeps typed prefixes, supports pause and resume, and uses both selected locales", async () =>
+{
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    var cultures = new[] { CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP") };
+    draft.Edit("Question:");
+    await draft.StartAsync(cultures[0], default, cultures); speech.FinalText = "こんにちは";
+    await draft.PauseAsync();
+    if (draft.Text != "Question: こんにちは" || draft.IsRecording || !draft.HasTurn || speech.AutomaticStartCount != 1 || speech.AutomaticCultures![1].Name != "ja-JP") throw new Exception();
+    await draft.StartAsync(cultures[0], default, cultures); speech.FinalText = "more words";
+    if (await draft.FinishAsync() != "Question: こんにちは more words" || speech.AutomaticStartCount != 2) throw new Exception();
+});
+await Check("Discarding during automatic recognition cannot resurrect a delayed transcript", async () =>
+{
+    var gate = new TaskCompletionSource<string>(); var speech = new FakeSpeech { FinalGate = gate }; var draft = new SpeechDraft(speech);
+    await draft.StartAsync(CultureInfo.GetCultureInfo("de-DE"), default, [CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP")]);
+    var pause = draft.PauseAsync(); draft.Clear(); gate.SetResult("late Japanese result"); await pause;
+    if (draft.Text != "" || draft.HasTurn) throw new Exception();
+});
+await Check("Editing during automatic recognition protects corrections and deletions", async () =>
+{
+    var gate = new TaskCompletionSource<string>(); var speech = new FakeSpeech { FinalGate = gate }; var draft = new SpeechDraft(speech);
+    draft.Edit("Keep this correction");
+    await draft.StartAsync(CultureInfo.GetCultureInfo("de-DE"), default, [CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP")]);
+    var pause = draft.PauseAsync(); draft.Edit("Corrected question"); gate.SetResult("wrong words"); await pause;
+    if (draft.Text != "Corrected question") throw new Exception();
 });
 await Check("AI context contains prior user and assistant turns before the latest question", () =>
 {
@@ -732,7 +819,7 @@ await Check("AI rejects empty input, identical languages and injected history ro
 await Check("AI preview handles every partial bilingual JSON prefix without leaking syntax", () =>
 {
     var expectedFirst = "こんにちは。\n質問です。"; var expectedSecond = "Hallo \"Welt\" 👋";
-    var json = JsonSerializer.Serialize(new { first_answer = expectedFirst, second_answer = expectedSecond, first_transliteration = "", second_transliteration = "" });
+    var json = JsonSerializer.Serialize(new { input_language = "ja", first_language = "ja", first_answer = expectedFirst, second_answer = expectedSecond, first_transliteration = "", second_transliteration = "" });
     for (var length = 0; length <= json.Length; length++)
     {
         var preview = TranslationPreview.Read(json[..length], "first_answer", "second_answer");
@@ -759,6 +846,13 @@ sealed class FakeSpeech : ISpeechCapture
 {
     public bool IsRecording { get; private set; }
     public int StartCount { get; private set; }
+    public int AutomaticStartCount { get; private set; }
+    public IReadOnlyList<CultureInfo>? AutomaticCultures { get; private set; }
+    public Task StartAutomaticAsync(IReadOnlyList<CultureInfo> cultures)
+    {
+        AutomaticStartCount++; AutomaticCultures = cultures;
+        return StartAsync(cultures[0]);
+    }
     public bool FailStart { get; init; }
     public string FinalText { get; set; } = "";
     public TaskCompletionSource<string>? FinalGate { get; init; }

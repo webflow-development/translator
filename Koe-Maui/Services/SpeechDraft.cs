@@ -49,7 +49,7 @@ public sealed class SpeechDraft
         Changed?.Invoke();
     }
 
-    public async Task StartAsync(CultureInfo culture, CancellationToken ct = default)
+    public async Task StartAsync(CultureInfo culture, CancellationToken ct = default, IReadOnlyList<CultureInfo>? automaticCultures = null)
     {
         if (transitioning || IsRecording) return;
         ct.ThrowIfCancellationRequested();
@@ -62,7 +62,8 @@ public sealed class SpeechDraft
         State = RecordingState.Recording;
         try
         {
-            await speech.StartAsync(culture);
+            if (automaticCultures is null) await speech.StartAsync(culture);
+            else await speech.StartAutomaticAsync(automaticCultures);
             ct.ThrowIfCancellationRequested();
             if (reset != resetRevision) { speech.Stop(); State = RecordingState.Ready; return; }
             if (!speech.IsRecording) { acceptingTranscript = false; State = RecordingState.Paused; }
@@ -88,7 +89,8 @@ public sealed class SpeechDraft
         {
             var final = await speech.FinishAsync(ct);
             // A final recognizer callback must never undo a correction made in the editor.
-            if (!segmentEdited && revision == editRevision && !string.IsNullOrWhiteSpace(final)) Text = Join(prefix, final);
+            ct.ThrowIfCancellationRequested();
+            if (reset == resetRevision && !segmentEdited && revision == editRevision && !string.IsNullOrWhiteSpace(final)) Text = Join(prefix, final);
         }
         finally
         {

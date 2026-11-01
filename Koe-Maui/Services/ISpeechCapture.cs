@@ -8,6 +8,8 @@ public interface ISpeechCapture
     event Action<string>? TranscriptChanged;
     event Action<string?>? Stopped;
     Task StartAsync(CultureInfo culture);
+    Task StartAutomaticAsync(IReadOnlyList<CultureInfo> cultures)
+        => throw new NotSupportedException("Automatic speech recognition is available on iPhone. Please type your question.");
     Task<string> FinishAsync(CancellationToken cancellationToken = default);
     void Stop();
 }

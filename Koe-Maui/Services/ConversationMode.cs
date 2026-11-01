@@ -11,12 +11,7 @@ public sealed class ConversationMode
         IsAi = false; FromFirst = fromFirst; LastSpeakerCode = code;
     }
 
-    public void SelectAi(ConversationLanguage first, ConversationLanguage second)
-    {
-        IsAi = true;
-        if (LastSpeakerCode == first.Code) FromFirst = true;
-        else if (LastSpeakerCode == second.Code) FromFirst = false;
-    }
+    public void SelectAi() => IsAi = true;
 
     public void CompleteTurn(ConversationLanguage first, string speakerCode)
     {
