@@ -529,6 +529,85 @@ await Check("Voice API errors hide echoed message text and never retry", async (
     try { await new OpenAiSpeechClient(_ => socket).SynthesizeAsync("test", "Hello", "en", "marin", default); throw new Exception("Expected failure."); }
     catch (InvalidOperationException ex) { if (ex.Message.Contains("sensitive-test-key") || socket.Sent.Count != 0) throw new Exception(); }
 });
+await Check("Swiss recognition stays separate from generic German without duplicate locales", () =>
+{
+    var languages = ConversationLanguage.FromSpeechLocales(["de_DE", "de-AT", "de_CH", "de-CH", "DE-ch", "ja-JP"]);
+    if (languages.Length != 3 || languages.Single(x => x.Code == "de").Culture != "de-DE" ||
+        languages.Single(x => x.Code == "de-CH").Culture != "de-CH" || languages.Single(x => x.Code == "de-CH").Name != "German (Switzerland)") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Swiss German is offered only when the speech locale is present", () =>
+{
+    if (ConversationLanguage.FromSpeechLocales(["de-DE", "en-US"]).Any(x => x.Code == "de-CH")) throw new Exception();
+    var swissOnly = ConversationLanguage.FromSpeechLocales(["de-CH", "en-US"]);
+    if (swissOnly.Length != 2 || !swissOnly.Any(x => x.Code == "de-CH") || swissOnly.Any(x => x.Code == "de")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Swiss language selection has a compact speaker label, greeting and searchable aliases", () =>
+{
+    var swiss = ConversationLanguage.Get("de-CH");
+    if (swiss.Culture != "de-CH" || swiss.SpeakerName != "German (CH)" || swiss.Greeting != "Grüezi!") throw new Exception();
+    foreach (var query in new[] { "Schweizerdeutsch", "Swiss German", "Schweiz", "de-CH" })
+        if (!swiss.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)) throw new Exception(query);
+    if (ConversationLanguage.Get("de").Greeting != "Hallo!") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Swiss speech voices must match the region while generic German keeps regional choices", () =>
+{
+    var swiss = new PlaybackVoice("swiss", "Swiss", "de_CH");
+    var german = new PlaybackVoice("german", "German", "de-DE");
+    var austrian = new PlaybackVoice("austrian", "Austrian", "de-AT");
+    if (!swiss.Matches("de-CH") || german.Matches("de-CH") || austrian.Matches("de-CH") ||
+        !swiss.Matches("de") || !german.Matches("de") || !austrian.Matches("de")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Swiss translation preserves regional input and requests Swiss Standard German spelling", () =>
+{
+    var swiss = ConversationLanguage.Get("de-CH");
+    using var payload = JsonDocument.Parse(TranslationRequest.Build("test", "Ich ha es Billet.", swiss, ConversationLanguage.Get("ja"), photo));
+    var instruction = payload.RootElement.GetProperty("instructions").GetString()!;
+    if (!instruction.Contains("from German (Switzerland) to Japanese") || !instruction.Contains("do not treat dialect as a grammatical error") ||
+        !instruction.Contains("ss instead of ß") || !instruction.Contains("de-CH or ja")) throw new Exception();
+    if (payload.RootElement.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString() != "Ich ha es Billet.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Image OCR resolves generic German source to the selected Swiss speaker", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"","corrected_original":"","source_transliteration":"","target_transliteration":"","image_text_found":true,"image_source":"de","image_target":"ja","image_original":"Guten Tag","image_translation":"こんにちは","image_source_transliteration":"","image_target_transliteration":"Konnichiwa"}
+    """, hasImage: true, hasText: false, sourceLanguage: ConversationLanguage.Get("de-CH"), targetLanguage: ConversationLanguage.Get("ja"));
+    if (result.ImageText?.Source != "de-CH" || result.ImageText.Target != "ja") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Image OCR resolves generic German destination to the selected Swiss target", () =>
+{
+    var result = TranslationResult.Parse("""
+    {"translation":"","corrected_original":"","source_transliteration":"","target_transliteration":"","image_text_found":true,"image_source":"ja","image_target":"de","image_original":"こんにちは","image_translation":"Guten Tag","image_source_transliteration":"Konnichiwa","image_target_transliteration":""}
+    """, hasImage: true, hasText: false, sourceLanguage: ConversationLanguage.Get("ja"), targetLanguage: ConversationLanguage.Get("de-CH"));
+    if (result.ImageText?.Source != "ja" || result.ImageText.Target != "de-CH") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Regional image code resolution honors exact matches and never guesses between German variants", () =>
+{
+    var generic = ConversationLanguage.Get("de"); var swiss = ConversationLanguage.Get("de-CH");
+    if (ConversationLanguage.ResolveSelectedCode("de", generic, swiss) != "de" ||
+        ConversationLanguage.ResolveSelectedCode("DE-ch", generic, swiss) != "de-CH" ||
+        ConversationLanguage.ResolveSelectedCode("de-AT", generic, swiss) != "de-AT") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Image destination outside the selected Swiss language pair is rejected", () => Reject(() =>
+{
+    TranslationResult.Parse("""
+    {"translation":"","corrected_original":"","source_transliteration":"","target_transliteration":"","image_text_found":true,"image_source":"ja","image_target":"en","image_original":"こんにちは","image_translation":"Hello","image_source_transliteration":"Konnichiwa","image_target_transliteration":""}
+    """, hasImage: true, hasText: false, sourceLanguage: ConversationLanguage.Get("de-CH"), targetLanguage: ConversationLanguage.Get("ja"));
+    return Task.CompletedTask;
+}));
+await Check("OpenAI speech keeps the Swiss regional language in its reading instructions", () =>
+{
+    using var session = JsonDocument.Parse(OpenAiSpeechClient.Session("marin", ConversationLanguage.Get("de-CH").Code));
+    if (!session.RootElement.GetProperty("session").GetProperty("instructions").GetString()!.Contains("German (Switzerland)")) throw new Exception();
+    return Task.CompletedTask;
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

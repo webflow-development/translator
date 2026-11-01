@@ -6,7 +6,14 @@ public sealed record PlaybackVoice(string Id, string Name, string Culture)
 {
     public bool Matches(string languageCode)
     {
-        try { return CultureInfo.GetCultureInfo(Culture.Replace('_', '-')).TwoLetterISOLanguageName == languageCode; }
+        try
+        {
+            var voiceCulture = CultureInfo.GetCultureInfo(Culture.Replace('_', '-'));
+            var requestedCulture = CultureInfo.GetCultureInfo(languageCode.Replace('_', '-'));
+            return requestedCulture.IsNeutralCulture
+                ? voiceCulture.TwoLetterISOLanguageName == requestedCulture.TwoLetterISOLanguageName
+                : voiceCulture.Name.Equals(requestedCulture.Name, StringComparison.OrdinalIgnoreCase);
+        }
         catch (CultureNotFoundException) { return false; }
     }
     public string DisplayName => $"{Name} · {Culture}";

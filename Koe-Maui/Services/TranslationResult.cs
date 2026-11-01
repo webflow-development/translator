@@ -35,7 +35,7 @@ public sealed record TranslationResult(string Translation, string SourceTranslit
     }
     """;
 
-    public static TranslationResult Parse(string json, bool hasImage = false, bool hasText = true, bool includeTransliteration = true)
+    public static TranslationResult Parse(string json, bool hasImage = false, bool hasText = true, bool includeTransliteration = true, ConversationLanguage? sourceLanguage = null, ConversationLanguage? targetLanguage = null)
     {
         try
         {
@@ -52,9 +52,12 @@ public sealed record TranslationResult(string Translation, string SourceTranslit
                 if (!root.TryGetProperty("image_text_found", out var found) || found.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw InvalidResponse();
                 if (found.GetBoolean())
                 {
-                    var source = ReadText(root, "image_source");
-                    var target = ReadText(root, "image_target");
-                    if (!ConversationLanguage.All.Any(x => x.Code == target) || source == target) throw InvalidResponse();
+                    var source = ConversationLanguage.ResolveSelectedCode(ReadText(root, "image_source"), sourceLanguage, targetLanguage);
+                    var target = ConversationLanguage.ResolveSelectedCode(ReadText(root, "image_target"), sourceLanguage, targetLanguage);
+                    var allowedTarget = sourceLanguage is not null && targetLanguage is not null
+                        ? target == sourceLanguage.Code || target == targetLanguage.Code
+                        : ConversationLanguage.All.Any(x => x.Code == target);
+                    if (!allowedTarget || source == target) throw InvalidResponse();
                     var originalReading = ReadText(root, "image_source_transliteration", false);
                     var translatedReading = ReadText(root, "image_target_transliteration", false);
                     imageText = new(source, target, ReadText(root, "image_original"), ReadText(root, "image_translation"), includeTransliteration ? originalReading : "", includeTransliteration ? translatedReading : "");

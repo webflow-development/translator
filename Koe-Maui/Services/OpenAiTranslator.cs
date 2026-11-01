@@ -31,7 +31,7 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
             if (preview == last) return;
             last = preview; onPreview(preview);
         });
-        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration);
+        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration, source, target);
     }
 
     public async Task<TranslationModel[]> GetModelsAsync(CancellationToken ct)

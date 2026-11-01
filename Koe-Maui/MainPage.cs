@@ -522,7 +522,7 @@ public sealed class MainPage : ContentPage
         search.TextChanged += (_, args) =>
         {
             var query = args.NewTextValue?.Trim() ?? "";
-            list.ItemsSource = choices.Where(x => x.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || x.Code.Contains(query, StringComparison.OrdinalIgnoreCase) || CultureInfo.GetCultureInfo(x.Culture).NativeName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            list.ItemsSource = choices.Where(x => x.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         };
         page.Disappearing += (_, _) => { if (!closing) completion.TrySetResult(null); };
         await Navigation.PushModalAsync(page);
@@ -703,8 +703,8 @@ public sealed class MainPage : ContentPage
         var speakerInk = Color.FromArgb("#205C3B");
         firstSpeaker.BackgroundColor = fromFirst ? speakerGreen : Colors.Transparent;
         secondSpeaker.BackgroundColor = fromFirst ? Colors.Transparent : speakerGreen;
-        firstSpeaker.Text = (fromFirst ? "🎙 " : "") + first.Name;
-        secondSpeaker.Text = (fromFirst ? "" : "🎙 ") + second.Name;
+        firstSpeaker.Text = (fromFirst ? "🎙 " : "") + first.SpeakerName;
+        secondSpeaker.Text = (fromFirst ? "" : "🎙 ") + second.SpeakerName;
         firstSpeaker.TextColor = fromFirst ? speakerInk : Muted; secondSpeaker.TextColor = fromFirst ? Muted : speakerInk;
         SemanticProperties.SetDescription(firstSpeaker, $"{first.Name}, " + (fromFirst ? "active speaker" : "select speaker"));
         SemanticProperties.SetDescription(secondSpeaker, $"{second.Name}, " + (fromFirst ? "select speaker" : "active speaker"));

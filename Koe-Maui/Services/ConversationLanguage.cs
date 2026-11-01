@@ -4,8 +4,13 @@ namespace Koe.Services;
 
 public sealed record ConversationLanguage(string Code, string Name, string Culture)
 {
+    public string SpeakerName => Code == "de-CH" ? "German (CH)" : Name;
+    public string SearchText => $"{Name} {Code} {CultureInfo.GetCultureInfo(Culture).NativeName}" +
+        (Code == "de-CH" ? " Swiss German Deutsch Schweiz Schweizerdeutsch Schwiizerdütsch" : "");
+
     public string Greeting => Code switch
     {
+        "de-CH" => "Grüezi!",
         "en" => "Hello!", "de" => "Hallo!", "es" => "¡Hola!", "fr" => "Bonjour !",
         "it" => "Ciao!", "pt" => "Olá!", "nl" => "Hallo!", "ja" => "こんにちは！",
         "zh" => "你好！", "yue" => "你好！", "ko" => "안녕하세요!", "vi" => "Xin chào!",
@@ -32,7 +37,7 @@ public sealed record ConversationLanguage(string Code, string Name, string Cultu
     static readonly ConversationLanguage[] Defaults =
     [
         new("en", "English", "en-US"), new("es", "Spanish", "es-ES"),
-        new("de", "German", "de-DE"), new("ja", "Japanese", "ja-JP"),
+        new("de", "German", "de-DE"), new("de-CH", "German (Switzerland)", "de-CH"), new("ja", "Japanese", "ja-JP"),
         new("zh", "Mandarin", "zh-CN")
     ];
     public static ConversationLanguage[] All { get; private set; } = Defaults;
@@ -51,7 +56,8 @@ public sealed record ConversationLanguage(string Code, string Name, string Cultu
             try
             {
                 var culture = CultureInfo.GetCultureInfo(locale.Replace('_', '-'));
-                var code = culture.TwoLetterISOLanguageName;
+                // Keep the Swiss locale distinct instead of merging it into generic German.
+                var code = culture.Name.Equals("de-CH", StringComparison.OrdinalIgnoreCase) ? "de-CH" : culture.TwoLetterISOLanguageName;
                 if (code is "" or "iv" || culture.IsNeutralCulture) continue;
                 var known = Defaults.FirstOrDefault(x => x.Code == code);
                 var name = known?.Name ?? CultureInfo.GetCultureInfo(code).EnglishName;
@@ -66,4 +72,17 @@ public sealed record ConversationLanguage(string Code, string Name, string Cultu
         }).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
     public static ConversationLanguage Get(string code) => All.FirstOrDefault(x => x.Code == code) ?? All[0];
+
+    public static string ResolveSelectedCode(string code, ConversationLanguage? first, ConversationLanguage? second)
+    {
+        if (first is null || second is null) return code;
+        var pair = new[] { first, second };
+        var exact = pair.FirstOrDefault(x => x.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null) return exact.Code;
+        // OCR may return "de" for Swiss German text. Resolve only an unambiguous
+        // language-family match; never guess between two selected German variants.
+        var family = code.Replace('_', '-').Split('-')[0];
+        var matches = pair.Where(x => x.Code.Split('-')[0].Equals(family, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return matches.Length == 1 ? matches[0].Code : code;
+    }
 }
