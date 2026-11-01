@@ -131,29 +131,31 @@ public sealed class MainPage : ContentPage
             } },
             ItemTemplate = new ConversationTemplateSelector(new DataTemplate(() => CreateBubble(ConversationTurnKind.Translation)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiQuestion)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiAnswer)))
         };
-        // Reserve layout space for the AI branch so it stays clear of the message field.
         var languages = new Grid
         {
-            ColumnSpacing = 6, RowSpacing = 0,
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) },
-            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(16), new RowDefinition(GridLength.Auto) }
+            ColumnSpacing = 2,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
+            }
         };
-        var languageArrows = new Label
+        var firstAiArrow = new Label
         {
-            Text = "⇄", FontSize = 24, TextColor = Blue, InputTransparent = true,
+            Text = "→", FontSize = 20, WidthRequest = 18, TextColor = Blue, InputTransparent = true,
             HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center
         };
-        var aiConnector = new Line
+        var secondAiArrow = new Label
         {
-            X1 = 1, Y1 = 0, X2 = 1, Y2 = 16, WidthRequest = 2, HeightRequest = 16,
-            Stroke = Color.FromArgb("#9ACCAF"), StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 2, 3 },
-            HorizontalOptions = LayoutOptions.Center, InputTransparent = true
+            Text = "←", FontSize = 20, WidthRequest = 18, TextColor = Blue, InputTransparent = true,
+            HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center
         };
         languages.Add(firstSpeaker, 0, 0);
-        languages.Add(languageArrows, 1, 0);
-        languages.Add(secondSpeaker, 2, 0);
-        languages.Add(aiConnector, 1, 1);
-        languages.Add(aiSpeaker, 1, 2);
+        languages.Add(firstAiArrow, 1, 0);
+        languages.Add(aiSpeaker, 2, 0);
+        languages.Add(secondAiArrow, 3, 0);
+        languages.Add(secondSpeaker, 4, 0);
         var input = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         input.Add(attach, 0, 0); input.Add(draft, 1, 0);
         var attachmentRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
