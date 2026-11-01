@@ -14,6 +14,25 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
         var catalog = await GetModelsAsync(token, ct);
         var model = TranslationModel.Resolve(catalog, modelId);
         var payload = TranslationRequest.Build(model.Id, text, source, target, image, includeTransliteration);
+        var json = await CompleteAsync(token, payload, ct, onPreview);
+        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration, source, target);
+    }
+
+    public async Task<AiReply> AskAsync(string question, ConversationLanguage first, ConversationLanguage second,
+        IEnumerable<AiContextMessage> history, CancellationToken ct, ImageAttachment? image = null,
+        Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true, string? modelId = null)
+    {
+        var token = await auth.ValidAccessTokenAsync(ct);
+        var catalog = await GetModelsAsync(token, ct);
+        var model = TranslationModel.Resolve(catalog, modelId);
+        var payload = AiChatRequest.Build(model.Id, question, first, second, history, image, includeTransliteration);
+        var json = await CompleteAsync(token, payload, ct, onPreview, "first_answer", "second_answer");
+        return AiReply.Parse(json, includeTransliteration);
+    }
+
+    async Task<string> CompleteAsync(string token, byte[] payload, CancellationToken ct,
+        Action<TranslationPreview>? onPreview, string firstField = "translation", string secondField = "image_translation")
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses")
         { Content = new StringContent(Encoding.UTF8.GetString(payload), Encoding.UTF8, "application/json") };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -27,11 +46,11 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
         var json = await ResponseStream.ReadAsync(reader, ct, partial =>
         {
             if (onPreview is null) return;
-            var preview = TranslationPreview.Read(partial);
+            var preview = TranslationPreview.Read(partial, firstField, secondField);
             if (preview == last) return;
             last = preview; onPreview(preview);
         });
-        return TranslationResult.Parse(json, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration, source, target);
+        return json;
     }
 
     public async Task<TranslationModel[]> GetModelsAsync(CancellationToken ct)
@@ -64,7 +83,7 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
             401 => "Your sign-in has expired. Please sign out and reconnect.",
             403 => "Your account does not have access to this request.",
             429 => "Usage limit reached. Try again later or check your ChatGPT usage.",
-            _ => $"The translation request failed (HTTP {(int)response.StatusCode})."
+            _ => $"The ChatGPT request failed (HTTP {(int)response.StatusCode})."
         };
         throw new InvalidOperationException(message);
     }

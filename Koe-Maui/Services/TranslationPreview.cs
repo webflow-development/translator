@@ -6,7 +6,8 @@ namespace Koe.Services;
 public sealed record TranslationPreview(string Text, string ImageText)
 {
     // Only expose JSON string values, never syntax or an unfinished escape sequence.
-    public static TranslationPreview Read(string json) => new(ReadField(json, "translation"), ReadField(json, "image_translation"));
+    public static TranslationPreview Read(string json, string firstField = "translation", string secondField = "image_translation")
+        => new(ReadField(json, firstField), ReadField(json, secondField));
 
     static string ReadField(string json, string field)
     {

@@ -24,7 +24,7 @@ internal static class ResponseStream
                     break;
                 case "response.completed": return true;
                 case "response.failed": case "response.incomplete": case "error":
-                    throw new InvalidOperationException("The translation could not be completed. Please try again.");
+                    throw new InvalidOperationException("The response could not be completed. Please try again.");
             }
             return false;
         }
@@ -37,13 +37,13 @@ internal static class ResponseStream
             else if (line.StartsWith("data:", StringComparison.Ordinal)) data.Add(line[5..].TrimStart(' '));
         }
         if (HandleEvent()) return Finish(output);
-        throw new InvalidOperationException("The translation was interrupted before completion.");
+        throw new InvalidOperationException("The response was interrupted before completion.");
     }
 
     static string Finish(StringBuilder output)
     {
         var text = output.ToString().Trim();
-        if (text.Length == 0) throw new InvalidOperationException("The response contains no translation.");
+        if (text.Length == 0) throw new InvalidOperationException("The response contains no text.");
         return text;
     }
 }

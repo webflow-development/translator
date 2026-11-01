@@ -5,9 +5,13 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Koe;
 
-public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true)
+public enum ConversationTurnKind { Translation, AiQuestion, AiAnswer }
+
+public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true, ConversationTurnKind Kind = ConversationTurnKind.Translation)
 {
-    public string Direction => string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
+    public string Direction => Kind == ConversationTurnKind.AiAnswer ? "AI" : Kind == ConversationTurnKind.AiQuestion ? $"You → AI · {Source}" : string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
+    public bool IsAi => Kind != ConversationTurnKind.Translation;
+    public bool HasTranslation => !string.IsNullOrWhiteSpace(Translation);
     public string TranslatedReadingCaption => "Transliteration · " + TargetTransliteration;
     public string OriginalReadingCaption => "Transliteration · " + SourceTransliteration;
     public bool TranslationHasReading => !string.IsNullOrWhiteSpace(TargetTransliteration);
@@ -15,6 +19,13 @@ public sealed record ConversationTurn(string Source, string Target, string Origi
     public ImageSource? Picture => Attachment is null ? null : ImageSource.FromStream(() => new MemoryStream(Attachment.Bytes, writable: false));
     public bool HasPicture => Attachment is not null;
     public bool HasOriginal => !string.IsNullOrWhiteSpace(Original);
+}
+
+sealed class ConversationTemplateSelector(DataTemplate translation, DataTemplate question, DataTemplate answer) : DataTemplateSelector
+{
+    protected override DataTemplate OnSelectTemplate(object item, BindableObject container) => item is ConversationTurn turn
+        ? turn.Kind switch { ConversationTurnKind.AiQuestion => question, ConversationTurnKind.AiAnswer => answer, _ => translation }
+        : translation;
 }
 
 public sealed class MainPage : ContentPage
@@ -27,6 +38,9 @@ public sealed class MainPage : ContentPage
     readonly OpenAiVoiceSettings voiceSettings;
     int playbackRevision;
     readonly ObservableCollection<ConversationTurn> turns = [];
+    readonly Label liveCaption = new() { FontSize = 11, TextColor = Muted };
+    readonly Label welcomeHint = new() { FontSize = 15, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, LineHeight = 1.2 };
+    readonly Label attachmentHint = new() { FontSize = 11, TextColor = Muted };
     readonly Label liveTranslation = new() { TextColor = Ink, FontSize = 18, LineHeight = 1.15 };
     readonly Border livePreview;
     readonly CollectionView messages;
@@ -53,6 +67,7 @@ public sealed class MainPage : ContentPage
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
     readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
+    readonly Button aiSpeaker = new() { Text = "AI", FontSize = 14, FontAttributes = FontAttributes.Bold, WidthRequest = 52, HeightRequest = 36, CornerRadius = 18, Padding = 0, TranslationY = 8, TextColor = Color.FromArgb("#205C3B"), BackgroundColor = Colors.White, BorderColor = Color.FromArgb("#9ACCAF"), BorderWidth = 1 };
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted, MaxLines = 1, LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center };
     readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 132, HeightRequest = 30, MinimumHeightRequest = 30, VerticalOptions = LayoutOptions.Center, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
@@ -66,11 +81,11 @@ public sealed class MainPage : ContentPage
     CancellationTokenSource? operation;
     bool busy, pageVisible, syncingDraft, pausingForEdit;
     bool discardingInput;
-    bool fromFirst = true;
+    readonly ConversationMode mode = new();
     ConversationLanguage first = ConversationLanguage.Get(Preferences.Default.Get("koe.language.first", "en"));
     ConversationLanguage second = ConversationLanguage.Get(Preferences.Default.Get("koe.language.second", "ja"));
-    ConversationLanguage SourceLanguage => fromFirst ? first : second;
-    ConversationLanguage TargetLanguage => fromFirst ? second : first;
+    ConversationLanguage SourceLanguage => mode.FromFirst ? first : second;
+    ConversationLanguage TargetLanguage => mode.FromFirst ? second : first;
 
     public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings)
     {
@@ -93,7 +108,7 @@ public sealed class MainPage : ContentPage
         header.Add(menu, 1, 0);
         header.Add(account, 0, 1);
         header.Add(modelPicker, 1, 1);
-        SemanticProperties.SetDescription(modelPicker, "ChatGPT translation model");
+        SemanticProperties.SetDescription(modelPicker, "ChatGPT model");
         modelPicker.SelectedIndexChanged += (_, _) =>
         {
             if (updatingModels || modelPicker.SelectedItem is not TranslationModel selected) return;
@@ -112,19 +127,19 @@ public sealed class MainPage : ContentPage
             EmptyView = new VerticalStackLayout { Padding = new Thickness(30, 42), Spacing = 12, Children =
             {
                 firstGreeting, secondGreeting,
-                new Label { Text = "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.", FontSize = 15, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, LineHeight = 1.2 }
+                welcomeHint
             } },
-            ItemTemplate = new DataTemplate(CreateBubble)
+            ItemTemplate = new ConversationTemplateSelector(new DataTemplate(() => CreateBubble(ConversationTurnKind.Translation)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiQuestion)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiAnswer)))
         };
-        var languages = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
+        var languages = new Grid { Padding = new Thickness(0, 0, 0, 8), ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         languages.Add(firstSpeaker, 0, 0);
-        languages.Add(new Label { Text = "⇄", FontSize = 21, TextColor = Blue, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
+        languages.Add(aiSpeaker, 1, 0);
         languages.Add(secondSpeaker, 2, 0);
         var input = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         input.Add(attach, 0, 0); input.Add(draft, 1, 0);
         var attachmentRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
         attachmentRow.Add(attachmentPreview, 0, 0);
-        attachmentRow.Add(new VerticalStackLayout { VerticalOptions = LayoutOptions.Center, Spacing = 4, Children = { attachmentName, new Label { Text = "Translate image text + your message", FontSize = 11, TextColor = Muted } } }, 1, 0);
+        attachmentRow.Add(new VerticalStackLayout { VerticalOptions = LayoutOptions.Center, Spacing = 4, Children = { attachmentName, attachmentHint } }, 1, 0);
         attachmentRow.Add(removeAttachment, 2, 0);
         attachmentCard = new Border { IsVisible = false, Padding = 8, BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DCE8F0"), StrokeShape = new RoundRectangle { CornerRadius = 16 }, Content = attachmentRow };
         var inputBorder = new Border { BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DCE8F0"), StrokeShape = new RoundRectangle { CornerRadius = 24 }, Padding = new Thickness(12, 4, 5, 4), Content = input };
@@ -144,7 +159,7 @@ public sealed class MainPage : ContentPage
             BackgroundColor = Colors.White, StrokeShape = new RoundRectangle { CornerRadius = 16 },
             Content = new VerticalStackLayout { Spacing = 4, Children =
             {
-                new Label { Text = "Translating · preview", FontSize = 11, TextColor = Muted },
+                liveCaption,
                 new ScrollView { MaximumHeightRequest = 120, Content = liveTranslation }
             } }
         };
@@ -166,8 +181,9 @@ public sealed class MainPage : ContentPage
             if (recording.HasTurn || !string.IsNullOrWhiteSpace(recording.Text) || pendingImage is not null) DiscardInput();
             else operation?.Cancel();
         };
-        firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromFirst = true; UpdateControls(); } };
-        secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { fromFirst = false; UpdateControls(); } };
+        firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(true, first.Code); SetStatus(null); UpdateControls(); } };
+        secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(false, second.Code); SetStatus(null); UpdateControls(); } };
+        aiSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectAi(first, second); SetStatus(null); UpdateControls(); } };
         draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
         draft.Focused += async (_, _) =>
         {
@@ -205,13 +221,14 @@ public sealed class MainPage : ContentPage
 
     static Button LanguageButton(string text) => new() { Text = text, FontSize = 14, CornerRadius = 16, HeightRequest = 36, Padding = new Thickness(12, 0), TextColor = Muted, BackgroundColor = Colors.Transparent };
 
-    View CreateBubble()
+    View CreateBubble(ConversationTurnKind kind)
     {
+        var isAi = kind != ConversationTurnKind.Translation;
         var direction = new Label { FontSize = 11, TextColor = Muted };
         direction.SetBinding(Label.TextProperty, nameof(ConversationTurn.Direction));
-        var original = new Label { FontSize = 14, TextColor = Muted, LineHeight = 1.15 };
+        var original = new Label { FontSize = 14, TextColor = isAi ? Ink : Muted, LineHeight = 1.15 };
         original.SetBinding(Label.TextProperty, nameof(ConversationTurn.Original));
-        original.SetBinding(Label.FontSizeProperty, new Binding(nameof(OriginalFontSize), source: this));
+        original.SetBinding(Label.FontSizeProperty, new Binding(isAi ? nameof(MessageFontSize) : nameof(OriginalFontSize), source: this));
         var translation = new Label { FontSize = 18, TextColor = Ink, LineHeight = 1.15 };
         translation.SetBinding(Label.TextProperty, nameof(ConversationTurn.Translation));
         translation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
@@ -227,21 +244,22 @@ public sealed class MainPage : ContentPage
         translatedReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowTransliteration), source: this));
         var originalReading = new VerticalStackLayout { Children = { originalReadingLabel } };
         originalReading.SetBinding(IsVisibleProperty, new Binding(nameof(ShowTransliteration), source: this));
-        var copyTranslation = CopyButton("Copy translation");
+        var copyTranslation = CopyButton(isAi ? "Copy second AI answer" : "Copy translation");
         copyTranslation.Clicked += async (_, _) =>
         {
             if (copyTranslation.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Translation);
         };
-        var copyOriginal = CopyButton("Copy original");
+        var copyOriginal = CopyButton(kind == ConversationTurnKind.AiAnswer ? "Copy first AI answer" : isAi ? "Copy AI question" : "Copy original");
         copyOriginal.Clicked += async (_, _) =>
         {
             if (copyOriginal.BindingContext is ConversationTurn turn) await CopyTextAsync(turn.Original);
         };
-        var speakTranslation = SpeakerButton("Read translation aloud");
+        var speakTranslation = SpeakerButton(isAi ? "Read second AI answer aloud" : "Read translation aloud");
         speakTranslation.Clicked += async (_, _) => { if (speakTranslation.BindingContext is ConversationTurn turn) await SpeakTextAsync(turn.Translation, turn.Target); };
-        var speakOriginal = SpeakerButton("Read original aloud");
+        var speakOriginal = SpeakerButton(kind == ConversationTurnKind.AiAnswer ? "Read first AI answer aloud" : isAi ? "Read AI question aloud" : "Read original aloud");
         speakOriginal.Clicked += async (_, _) => { if (speakOriginal.BindingContext is ConversationTurn turn) await SpeakTextAsync(turn.Original, turn.Source); };
         var translatedRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) } };
+        translatedRow.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasTranslation));
         translatedRow.Add(translation, 0, 0); translatedRow.Add(copyTranslation, 1, 0);
         translatedRow.Add(speakTranslation, 2, 0);
         var originalRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) } };
@@ -251,16 +269,44 @@ public sealed class MainPage : ContentPage
         var picture = new Image { HeightRequest = 150, Aspect = Aspect.AspectFit };
         picture.SetBinding(Image.SourceProperty, nameof(ConversationTurn.Picture));
         picture.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasPicture));
+        var content = new VerticalStackLayout { Spacing = 7 };
+        content.Children.Add(direction); content.Children.Add(picture);
+        if (kind == ConversationTurnKind.AiAnswer)
+        {
+            var firstLanguage = new Label { FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#205C3B") };
+            firstLanguage.SetBinding(Label.TextProperty, nameof(ConversationTurn.Source));
+            var secondLanguage = new Label { FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#205C3B") };
+            secondLanguage.SetBinding(Label.TextProperty, nameof(ConversationTurn.Target));
+            content.Children.Add(firstLanguage); content.Children.Add(originalRow); content.Children.Add(originalReading);
+            content.Children.Add(secondLanguage); content.Children.Add(translatedRow); content.Children.Add(translatedReading);
+        }
+        else if (kind == ConversationTurnKind.AiQuestion)
+        {
+            content.Children.Add(originalRow); content.Children.Add(originalReading);
+        }
+        else
+        {
+            content.Children.Add(translatedRow); content.Children.Add(translatedReading);
+            content.Children.Add(originalRow); content.Children.Add(originalReading);
+        }
         var bubble = new Border
         {
             Margin = new Thickness(4, 6, 34, 6), Padding = new Thickness(14, 11), StrokeThickness = 0, BackgroundColor = Colors.White,
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(17, 17, 4, 17) }, HorizontalOptions = LayoutOptions.Start, MaximumWidthRequest = 330,
-            Content = new VerticalStackLayout { Spacing = 7, Children = { direction, picture, translatedRow, translatedReading, originalRow, originalReading } }
+            Content = content
         };
         bubble.BindingContextChanged += (_, _) =>
         {
             if (bubble.BindingContext is not ConversationTurn turn) return;
             speakTranslation.IsVisible = !string.IsNullOrWhiteSpace(turn.Target) && !string.IsNullOrWhiteSpace(turn.Translation);
+            if (turn.IsAi)
+            {
+                bubble.HorizontalOptions = LayoutOptions.Center;
+                bubble.Margin = new Thickness(8, 6);
+                bubble.BackgroundColor = Color.FromArgb(turn.Kind == ConversationTurnKind.AiAnswer ? "#DDF1DF" : "#ECF6ED");
+                bubble.StrokeShape = new RoundRectangle { CornerRadius = 17 };
+                return;
+            }
             bubble.HorizontalOptions = turn.FromFirst ? LayoutOptions.End : LayoutOptions.Start;
             bubble.Margin = turn.FromFirst ? new Thickness(34, 6, 4, 6) : new Thickness(4, 6, 34, 6);
             bubble.BackgroundColor = turn.FromFirst ? Color.FromArgb("#D3E8F8") : Colors.White;
@@ -445,7 +491,7 @@ public sealed class MainPage : ContentPage
         var selection = await DisplayActionSheetAsync(auth.IsConnected ? $"ChatGPT · {auth.AccountLabel}" : "Conversation", "Close", null, "Settings", "Clear history", "Manage usage", auth.IsConnected ? "Sign out" : "Connect ChatGPT");
         switch (selection)
         {
-            case "Clear history": turns.Clear(); break;
+            case "Clear history": ++playbackRevision; playback.Stop(); turns.Clear(); break;
             case "Settings": await ShowSettingsAsync(); break;
             case "Manage usage": await Browser.Default.OpenAsync("https://chatgpt.com/settings/usage"); break;
             case "Sign out": case "Connect ChatGPT": await ConnectAsync(); break;
@@ -476,7 +522,7 @@ public sealed class MainPage : ContentPage
         if (selectedFirst is null) return;
         var selectedSecond = await PickLanguageAsync("Second speaker's language", ConversationLanguage.All.Where(x => x.Code != selectedFirst.Code).ToArray());
         if (selectedSecond is null) return;
-        first = selectedFirst; second = selectedSecond; fromFirst = true;
+        first = selectedFirst; second = selectedSecond; mode.Reset();
         Preferences.Default.Set("koe.language.first", first.Code);
         Preferences.Default.Set("koe.language.second", second.Code);
         UpdateControls();
@@ -600,10 +646,18 @@ public sealed class MainPage : ContentPage
         {
             var text = (await recording.FinishAsync(operation.Token)).Trim();
             if (string.IsNullOrWhiteSpace(text) && pendingImage is null) { SetStatus("No speech detected. Tap the microphone to try again."); return; }
-            await TranslateDraftAsync(text, operation.Token);
-            SetStatus("Translated. The next speaker can start recording.");
+            if (mode.IsAi)
+            {
+                await AskAiDraftAsync(text, operation.Token);
+                SetStatus("AI replied in both languages. Ask a follow-up or select a speaker to translate.");
+            }
+            else
+            {
+                await TranslateDraftAsync(text, operation.Token);
+                SetStatus("Translated. The next speaker can start recording.");
+            }
         }
-        catch (OperationCanceledException) { recording.Suspend(); SetStatus("Translation cancelled. Your draft has been kept."); }
+        catch (OperationCanceledException) { recording.Suspend(); SetStatus(mode.IsAi ? "AI request cancelled. Your draft has been kept." : "Translation cancelled. Your draft has been kept."); }
         catch (Exception ex) { recording.Suspend(); SetStatus(ex.Message); }
         finally { FinishOperation(); }
     }
@@ -611,8 +665,28 @@ public sealed class MainPage : ContentPage
     async Task TranslateDraftAsync(string text, CancellationToken ct)
     {
         SetStatus("Translating …");
-        var direction = fromFirst;
+        var direction = mode.FromFirst;
         var image = pendingImage;
+        var translated = await WithPreviewAsync(ct, "Translating · preview", preview =>
+            translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, preview, showTransliteration, selectedModelId));
+        ct.ThrowIfCancellationRequested();
+        if (image is not null)
+        {
+            if (translated.ImageText is { } imageText)
+                turns.Add(new(ConversationLanguage.All.FirstOrDefault(x => x.Code == imageText.Source)?.Name ?? imageText.Source, ConversationLanguage.Get(imageText.Target).Name, imageText.Original, imageText.Translation, imageText.SourceTransliteration, imageText.TargetTransliteration, image, imageText.Source == first.Code));
+            else turns.Add(new("Image", "", "", "No legible text found in the image.", "", "", image));
+        }
+        if (!string.IsNullOrWhiteSpace(text))
+            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, translated.CorrectedOriginal, translated.Translation, translated.SourceTransliteration, translated.TargetTransliteration, null, direction));
+        recording.Clear(); SetAttachment(null);
+        if (!string.IsNullOrWhiteSpace(text)) mode.CompleteTurn(first, SourceLanguage.Code);
+        else if (translated.ImageText is { } detected) mode.CompleteTurn(first, detected.Source);
+        SetStatus(null);
+    }
+
+    async Task<T> WithPreviewAsync<T>(CancellationToken ct, string caption, Func<Action<TranslationPreview>, Task<T>> request)
+    {
+        liveCaption.Text = caption;
         var closed = false;
         var scheduled = false;
         var latest = new TranslationPreview("", "");
@@ -630,21 +704,35 @@ public sealed class MainPage : ContentPage
                 livePreview.IsVisible = !string.IsNullOrWhiteSpace(liveTranslation.Text);
             });
         });
-        TranslationResult translated;
-        try { translated = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, Preview, showTransliteration, selectedModelId); }
+        try { return await request(Preview); }
         finally { closed = true; livePreview.IsVisible = false; liveTranslation.Text = ""; }
-        ct.ThrowIfCancellationRequested();
-        if (image is not null)
+    }
+
+    IEnumerable<AiContextMessage> AiContext()
+    {
+        foreach (var turn in turns.TakeLast(AiChatRequest.MaximumHistoryMessages))
         {
-            if (translated.ImageText is { } imageText)
-                turns.Add(new(ConversationLanguage.All.FirstOrDefault(x => x.Code == imageText.Source)?.Name ?? imageText.Source, ConversationLanguage.Get(imageText.Target).Name, imageText.Original, imageText.Translation, imageText.SourceTransliteration, imageText.TargetTransliteration, image, imageText.Source == first.Code));
-            else turns.Add(new("Image", "", "", "No legible text found in the image.", "", "", image));
+            if (turn.Kind == ConversationTurnKind.AiAnswer)
+                yield return new("assistant", $"{turn.Source}: {turn.Original}\n\n{turn.Target}: {turn.Translation}");
+            else if (turn.Kind == ConversationTurnKind.AiQuestion)
+                yield return new("user", turn.Original, turn.Attachment);
+            else
+                yield return new("user", $"Conversation excerpt (background only):\n{turn.Source}: {turn.Original}\n{turn.Target}: {turn.Translation}", turn.Attachment);
         }
-        if (!string.IsNullOrWhiteSpace(text))
-            turns.Add(new(SourceLanguage.Name, TargetLanguage.Name, translated.CorrectedOriginal, translated.Translation, translated.SourceTransliteration, translated.TargetTransliteration, null, direction));
+    }
+
+    async Task AskAiDraftAsync(string text, CancellationToken ct)
+    {
+        SetStatus("AI is answering …");
+        var primary = SourceLanguage; var secondary = TargetLanguage;
+        var image = pendingImage;
+        var reply = await WithPreviewAsync(ct, $"AI · {primary.Name} / {secondary.Name}", preview =>
+            translator.AskAsync(text, primary, secondary, AiContext(), ct, image, preview, showTransliteration, selectedModelId));
+        ct.ThrowIfCancellationRequested();
+        turns.Add(new(primary.Name, "", text, "", "", "", image, Kind: ConversationTurnKind.AiQuestion));
+        turns.Add(new(primary.Name, secondary.Name, reply.FirstAnswer, reply.SecondAnswer, reply.FirstTransliteration, reply.SecondTransliteration, Kind: ConversationTurnKind.AiAnswer));
+        mode.CompleteTurn(first, primary.Code);
         recording.Clear(); SetAttachment(null);
-        fromFirst = !string.IsNullOrWhiteSpace(text) ? !direction : translated.ImageText is { } detected ? detected.Source != first.Code : direction;
-        SetStatus(null);
     }
 
     void DiscardInput()
@@ -676,6 +764,10 @@ public sealed class MainPage : ContentPage
 
     void UpdateControls()
     {
+        draft.Placeholder = mode.IsAi ? "Ask AI …" : "Type a message …";
+        welcomeHint.Text = mode.IsAi ? "Ask AI by voice or text, or add a photo.\nReplies appear in both languages." : "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.";
+        attachmentHint.Text = mode.IsAi ? "Ask AI about this image" : "Translate image text + your message";
+        livePreview.BackgroundColor = mode.IsAi ? Color.FromArgb("#DDF1DF") : Colors.White;
         firstGreeting.Text = first.Greeting;
         secondGreeting.Text = second.Greeting;
         account.Text = auth.IsConnected ? "● ChatGPT connected" : "○ ChatGPT not connected";
@@ -699,16 +791,25 @@ public sealed class MainPage : ContentPage
         SemanticProperties.SetDescription(shutter, recording.IsRecording ? "Pause recording" : recording.HasTurn ? "Resume recording" : "Start recording");
         prompt.Text = busy ? "One moment …" : recording.IsRecording ? $"{SourceLanguage.Name} · speak now" : recording.HasTurn ? "Recording paused" : $"{SourceLanguage.Name} · ready";
         hint.Text = busy ? "Processing your message." : recording.IsRecording ? "Microphone: pause · ↑: send" : recording.HasTurn ? "Resume on the left · send on the right" : "Microphone: record · ↑: send";
+        if (mode.IsAi)
+        {
+            prompt.Text = busy ? "AI · one moment …" : recording.IsRecording ? $"AI · {SourceLanguage.Name} · speak now" : recording.HasTurn ? "AI · recording paused" : $"AI · {SourceLanguage.Name} · ready";
+            if (busy) hint.Text = "AI is answering in both languages.";
+            else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
+        }
+        SemanticProperties.SetDescription(send, mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
         var speakerGreen = Color.FromArgb("#D1EEDC");
         var speakerInk = Color.FromArgb("#205C3B");
-        firstSpeaker.BackgroundColor = fromFirst ? speakerGreen : Colors.Transparent;
-        secondSpeaker.BackgroundColor = fromFirst ? Colors.Transparent : speakerGreen;
-        firstSpeaker.Text = (fromFirst ? "🎙 " : "") + first.SpeakerName;
-        secondSpeaker.Text = (fromFirst ? "" : "🎙 ") + second.SpeakerName;
-        firstSpeaker.TextColor = fromFirst ? speakerInk : Muted; secondSpeaker.TextColor = fromFirst ? Muted : speakerInk;
-        SemanticProperties.SetDescription(firstSpeaker, $"{first.Name}, " + (fromFirst ? "active speaker" : "select speaker"));
-        SemanticProperties.SetDescription(secondSpeaker, $"{second.Name}, " + (fromFirst ? "select speaker" : "active speaker"));
-        firstSpeaker.IsEnabled = secondSpeaker.IsEnabled = !busy && !recording.HasTurn;
+        firstSpeaker.BackgroundColor = !mode.IsAi && mode.FromFirst ? speakerGreen : Colors.Transparent;
+        secondSpeaker.BackgroundColor = !mode.IsAi && !mode.FromFirst ? speakerGreen : Colors.Transparent;
+        firstSpeaker.Text = (!mode.IsAi && mode.FromFirst ? "🎙 " : "") + first.SpeakerName;
+        secondSpeaker.Text = (!mode.IsAi && !mode.FromFirst ? "🎙 " : "") + second.SpeakerName;
+        firstSpeaker.TextColor = !mode.IsAi && mode.FromFirst ? speakerInk : Muted; secondSpeaker.TextColor = !mode.IsAi && !mode.FromFirst ? speakerInk : Muted;
+        SemanticProperties.SetDescription(firstSpeaker, $"{first.Name}, " + (!mode.IsAi && mode.FromFirst ? "active speaker" : "select speaker"));
+        SemanticProperties.SetDescription(secondSpeaker, $"{second.Name}, " + (!mode.IsAi && !mode.FromFirst ? "active speaker" : "select speaker"));
+        aiSpeaker.BackgroundColor = mode.IsAi ? Color.FromArgb("#BFE5CA") : Colors.White;
+        SemanticProperties.SetDescription(aiSpeaker, mode.IsAi ? $"AI mode active, input in {SourceLanguage.Name}" : "Ask AI in both conversation languages");
+        firstSpeaker.IsEnabled = secondSpeaker.IsEnabled = aiSpeaker.IsEnabled = !busy && !recording.HasTurn;
         var hasInput = recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null;
         cancel.Text = hasInput ? "×  Discard input" : "Cancel";
         cancel.IsVisible = hasInput || (busy && !discardingInput);
