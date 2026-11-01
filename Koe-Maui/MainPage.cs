@@ -67,7 +67,7 @@ public sealed class MainPage : ContentPage
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
     readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
-    readonly Button aiSpeaker = new() { Text = "AI", FontSize = 14, FontAttributes = FontAttributes.Bold, WidthRequest = 52, HeightRequest = 36, CornerRadius = 18, Padding = 0, TranslationY = 8, TextColor = Color.FromArgb("#205C3B"), BackgroundColor = Colors.White, BorderColor = Color.FromArgb("#9ACCAF"), BorderWidth = 1 };
+    readonly Button aiSpeaker = new() { Text = "AI", FontSize = 14, FontAttributes = FontAttributes.Bold, WidthRequest = 52, HeightRequest = 36, CornerRadius = 18, Padding = 0, TextColor = Color.FromArgb("#205C3B"), BackgroundColor = Colors.White, BorderColor = Color.FromArgb("#9ACCAF"), BorderWidth = 1 };
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
     readonly Label account = new() { FontSize = 12, TextColor = Muted, MaxLines = 1, LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center };
     readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 132, HeightRequest = 30, MinimumHeightRequest = 30, VerticalOptions = LayoutOptions.Center, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
@@ -131,10 +131,29 @@ public sealed class MainPage : ContentPage
             } },
             ItemTemplate = new ConversationTemplateSelector(new DataTemplate(() => CreateBubble(ConversationTurnKind.Translation)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiQuestion)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiAnswer)))
         };
-        var languages = new Grid { Padding = new Thickness(0, 0, 0, 8), ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
+        // Reserve layout space for the AI branch so it stays clear of the message field.
+        var languages = new Grid
+        {
+            ColumnSpacing = 6, RowSpacing = 0,
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) },
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(16), new RowDefinition(GridLength.Auto) }
+        };
+        var languageArrows = new Label
+        {
+            Text = "⇄", FontSize = 24, TextColor = Blue, InputTransparent = true,
+            HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center
+        };
+        var aiConnector = new Line
+        {
+            X1 = 1, Y1 = 0, X2 = 1, Y2 = 16, WidthRequest = 2, HeightRequest = 16,
+            Stroke = Color.FromArgb("#9ACCAF"), StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 2, 3 },
+            HorizontalOptions = LayoutOptions.Center, InputTransparent = true
+        };
         languages.Add(firstSpeaker, 0, 0);
-        languages.Add(aiSpeaker, 1, 0);
+        languages.Add(languageArrows, 1, 0);
         languages.Add(secondSpeaker, 2, 0);
+        languages.Add(aiConnector, 1, 1);
+        languages.Add(aiSpeaker, 1, 2);
         var input = new Grid { ColumnSpacing = 6, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
         input.Add(attach, 0, 0); input.Add(draft, 1, 0);
         var attachmentRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
