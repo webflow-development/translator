@@ -1010,6 +1010,130 @@ await Check("AI streaming still rejects interruption before completion", () => R
     var partial = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"first_answer\\\":\\\"Hello\"}\n\n";
     await ResponseStream.ReadAsync(new StringReader(partial), default);
 }));
+string SearchEvent(object item) => "data: " + JsonSerializer.Serialize(item) + "\n\n";
+object Citation(string title, string url) => new { type = "url_citation", title, url, start_index = 0, end_index = 12 };
+object CitedMessage(string text, params object[] annotations) => new { type = "message", role = "assistant", content = new[] { new { type = "output_text", text, annotations } } };
+string SearchCompletion(params object[] output) => SearchEvent(new { type = "response.completed", response = new { status = "completed", output } });
+var webAnswer = JsonSerializer.Serialize(new { input_language = "de", first_language = "de", first_answer = "Die aktuellen Informationen stehen hier.", second_answer = "最新の情報はこちらです。", first_transliteration = "", second_transliteration = "Saishin no joho wa kochira desu." });
+var exampleCitation = Citation("Japan tourism", "https://www.japan.travel/en/");
+await Check("AI enables optional web search automatically while ordinary translation stays tool-free", () =>
+{
+    using var ai = JsonDocument.Parse(AiChatRequest.Build("selected-model", "Was ist heute geöffnet?", ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"), []));
+    var root = ai.RootElement;
+    if (root.GetProperty("model").GetString() != "selected-model" || root.GetProperty("tools").GetArrayLength() != 1 ||
+        root.GetProperty("tools")[0].GetProperty("type").GetString() != "web_search" || root.GetProperty("tool_choice").GetString() != "auto" ||
+        root.GetProperty("store").GetBoolean() || !root.GetProperty("stream").GetBoolean()) throw new Exception();
+    var instructions = root.GetProperty("instructions").GetString()!;
+    if (!instructions.Contains("Use it automatically") || !instructions.Contains("ordinary conversation") || !instructions.Contains("untrusted evidence") || instructions.Contains("this mode has no tools")) throw new Exception();
+    using var translation = JsonDocument.Parse(TranslationRequest.Build("selected-model", "Hello", ConversationLanguage.Get("en"), ConversationLanguage.Get("ja")));
+    if (translation.RootElement.TryGetProperty("tools", out _) || translation.RootElement.TryGetProperty("tool_choice", out _)) throw new Exception("Web search leaked into translation.");
+    return Task.CompletedTask;
+});
+await Check("Web search streaming retains complete bilingual JSON, tool use and trusted citations", async () =>
+{
+    var stream = SearchEvent(new { type = "response.web_search_call.in_progress" }) + SearchEvent(new { type = "response.web_search_call.searching" }) +
+        SearchEvent(new { type = "response.output_text.delta", delta = webAnswer[..30] }) + SearchEvent(new { type = "response.output_text.delta", delta = webAnswer[30..] }) +
+        SearchCompletion(new { type = "web_search_call", status = "completed" }, CitedMessage(webAnswer, exampleCitation));
+    var progress = 0;
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(stream), default, onSearching: () => progress++);
+    if (result.Text != webAnswer || !result.WebSearchUsed || result.Citations.Count != 1 || result.Citations[0].Url != "https://www.japan.travel/en/" || progress != 1) throw new Exception();
+    var parsed = AiReply.Parse(result.Text, true, ConversationLanguage.Get("de"), ConversationLanguage.Get("ja"));
+    if (parsed.FirstLanguageCode != "de" || parsed.SecondAnswer != "最新の情報はこちらです。") throw new Exception();
+});
+await Check("A normal AI reply does not falsely report a web search", async () =>
+{
+    var progress = 0;
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(SearchCompletion(CitedMessage(webAnswer))), default, onSearching: () => progress++);
+    if (result.WebSearchUsed || result.Citations.Count != 0 || progress != 0 || result.Text != webAnswer) throw new Exception();
+});
+await Check("Final response text wins over tool-stage commentary and stale citations", async () =>
+{
+    var stale = Citation("Old source", "https://old.example/");
+    var stream = SearchEvent(new { type = "response.output_item.added", item = new { type = "message" } }) +
+        SearchEvent(new { type = "response.output_text.delta", delta = "I will search for that." }) +
+        SearchEvent(new { type = "response.output_text.annotation.added", annotation = stale }) +
+        SearchEvent(new { type = "response.output_item.added", item = new { type = "web_search_call" } }) +
+        SearchEvent(new { type = "response.output_item.added", item = new { type = "message" } }) +
+        SearchEvent(new { type = "response.output_text.delta", delta = webAnswer }) +
+        SearchCompletion(CitedMessage("Earlier commentary", stale), new { type = "web_search_call", status = "completed" }, CitedMessage(webAnswer, exampleCitation));
+    var previews = new List<string>();
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(stream), default, previews.Add);
+    if (result.Text != webAnswer || previews[^1] != webAnswer || result.Citations.Count != 1 || result.Citations[0].Title != "Japan tourism") throw new Exception();
+});
+await Check("Streamed citation annotations work when the completion omits the full output", async () =>
+{
+    var stream = SearchEvent(new { type = "response.output_item.done", item = new { type = "web_search_call", status = "completed" } }) +
+        SearchEvent(new { type = "response.output_text.delta", delta = webAnswer }) +
+        SearchEvent(new { type = "response.output_text.annotation.added", annotation = exampleCitation }) +
+        SearchEvent(new { type = "response.output_text.annotation.added", annotation = exampleCitation }) +
+        SearchEvent(new { type = "response.completed" });
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(stream), default);
+    if (!result.WebSearchUsed || result.Citations.Count != 1 || result.Text != webAnswer) throw new Exception();
+});
+await Check("Metadata citations remain usable without claiming a fresh web search", async () =>
+{
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(SearchCompletion(CitedMessage(webAnswer, exampleCitation))), default);
+    if (result.WebSearchUsed || result.Citations.Count != 1) throw new Exception();
+});
+await Check("Generated source fields cannot create verified source links", async () =>
+{
+    var answerWithInventedSources = "{\"sources\":[{\"url\":\"https://invented.example/\"}]}";
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(SearchCompletion(new { type = "web_search_call", status = "completed" }, CitedMessage(answerWithInventedSources))), default);
+    if (!result.WebSearchUsed || result.Citations.Count != 0) throw new Exception();
+});
+await Check("Failed web tool calls are not reported as successful searches", async () =>
+{
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(SearchCompletion(new { type = "web_search_call", status = "failed" }, CitedMessage(webAnswer))), default);
+    if (result.WebSearchUsed) throw new Exception();
+});
+foreach (var failure in new[] { "response.failed", "response.incomplete", "error" })
+    await Check("Search sources and partial answers cannot survive an incomplete response", () => Reject(async () =>
+    {
+        var stream = SearchEvent(new { type = "response.web_search_call.completed" }) + SearchEvent(new { type = "response.output_text.delta", delta = webAnswer }) +
+            SearchEvent(new { type = "response.output_text.annotation.added", annotation = exampleCitation }) + SearchEvent(new { type = failure });
+        await ResponseStream.ReadCompletionAsync(new StringReader(stream), default);
+    }));
+await Check("A contradictory completed event with incomplete response status is rejected", () => Reject(async () =>
+{
+    await ResponseStream.ReadCompletionAsync(new StringReader(SearchEvent(new { type = "response.completed", response = new { status = "incomplete", output = new[] { CitedMessage(webAnswer) } } })), default);
+}));
+await Check("Web search cancellation stops reading before an answer is committed", async () =>
+{
+    using var cancel = new CancellationTokenSource();
+    var stream = SearchEvent(new { type = "response.web_search_call.searching" }) + SearchCompletion(CitedMessage(webAnswer));
+    try
+    {
+        await ResponseStream.ReadCompletionAsync(new StringReader(stream), cancel.Token, onSearching: cancel.Cancel);
+        throw new Exception("Cancellation was ignored.");
+    }
+    catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
+});
+foreach (var unsafeUrl in new[] { "javascript:alert(1)", "file:///etc/passwd", "data:text/html,hello", "ftp://example.com/", "/relative/path", "https://name:password@example.com/", "not a url" })
+    await Check("Source links allow only absolute HTTP(S) URLs without credentials", () =>
+    {
+        if (WebCitation.Create("Source", unsafeUrl) is not null) throw new Exception(unsafeUrl);
+        return Task.CompletedTask;
+    });
+await Check("Source titles use a bounded label and fall back to their host", () =>
+{
+    var source = WebCitation.Create("", "https://EXAMPLE.COM/path")!;
+    if (source.Title != "example.com" || source.Url != "https://example.com/path" || WebCitation.Create(new string('x', 500), source.Url)!.Title.Length != 240) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Citation metadata deduplicates URLs and ignores invalid or unrelated annotations", async () =>
+{
+    var annotations = new object[] { exampleCitation, exampleCitation, Citation("Unsafe", "javascript:alert(1)"), new { type = "file_citation", url = "https://ignored.example/" }, new { type = 42, url = "https://ignored.example/" } };
+    var result = await ResponseStream.ReadCompletionAsync(new StringReader(SearchCompletion(new { type = "web_search_call", status = "completed" }, CitedMessage(webAnswer, annotations))), default);
+    if (result.Citations.Count != 1 || result.Citations[0].Title != "Japan tourism") throw new Exception();
+});
+await Check("Read-aloud and copied answers omit opaque citation markers and preserve Unicode", () =>
+{
+    var citations = new[] { WebCitation.Create("Japan tourism", "https://www.japan.travel/en/")! };
+    var text = "京都について [Japan tourism](https://www.japan.travel/en/) citeturn0search0";
+    var cleaned = WebCitation.CleanAnswer(text, citations);
+    if (cleaned != "京都について Japan tourism" || WebCitation.CleanAnswer("[Unknown](https://unverified.example/)", citations) != "[Unknown](https://unverified.example/)") throw new Exception(cleaned);
+    return Task.CompletedTask;
+});
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

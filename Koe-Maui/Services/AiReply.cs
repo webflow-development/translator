@@ -5,6 +5,8 @@ namespace Koe.Services;
 public sealed record AiReply(string FirstAnswer, string SecondAnswer, string FirstTransliteration, string SecondTransliteration,
     string FirstLanguageCode, string InputLanguageCode)
 {
+    public bool WebSearchUsed { get; init; }
+    public IReadOnlyList<WebCitation> Citations { get; init; } = [];
     internal static string Schema(ConversationLanguage first, ConversationLanguage second) => $$"""
     {
       "type":"object",

@@ -7,9 +7,9 @@ namespace Koe;
 
 public enum ConversationTurnKind { Translation, AiQuestion, AiAnswer }
 
-public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true, ConversationTurnKind Kind = ConversationTurnKind.Translation)
+public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true, ConversationTurnKind Kind = ConversationTurnKind.Translation, IReadOnlyList<WebCitation>? Citations = null, bool WebSearchUsed = false)
 {
-    public string Direction => Kind == ConversationTurnKind.AiAnswer ? "AI" : Kind == ConversationTurnKind.AiQuestion ? $"You → AI · {Source}" : string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
+    public string Direction => Kind == ConversationTurnKind.AiAnswer ? (WebSearchUsed ? "AI · Web search" : "AI") : Kind == ConversationTurnKind.AiQuestion ? $"You → AI · {Source}" : string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
     public bool IsAi => Kind != ConversationTurnKind.Translation;
     public bool HasTranslation => !string.IsNullOrWhiteSpace(Translation);
     public string TranslatedReadingCaption => "Transliteration · " + TargetTransliteration;
@@ -235,10 +235,10 @@ public sealed class MainPage : ContentPage
         var direction = new Label { FontSize = 11, TextColor = Muted };
         direction.SetBinding(Label.TextProperty, nameof(ConversationTurn.Direction));
         var original = new Label { FontSize = 14, TextColor = isAi ? Ink : Muted, LineHeight = 1.15 };
-        original.SetBinding(Label.TextProperty, nameof(ConversationTurn.Original));
+        if (kind != ConversationTurnKind.AiAnswer) original.SetBinding(Label.TextProperty, nameof(ConversationTurn.Original));
         original.SetBinding(Label.FontSizeProperty, new Binding(isAi ? nameof(MessageFontSize) : nameof(OriginalFontSize), source: this));
         var translation = new Label { FontSize = 18, TextColor = Ink, LineHeight = 1.15 };
-        translation.SetBinding(Label.TextProperty, nameof(ConversationTurn.Translation));
+        if (kind != ConversationTurnKind.AiAnswer) translation.SetBinding(Label.TextProperty, nameof(ConversationTurn.Translation));
         translation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
         var translatedReadingLabel = new Label { TextColor = Blue, LineHeight = 1.15 };
         translatedReadingLabel.SetBinding(Label.TextProperty, nameof(ConversationTurn.TranslatedReadingCaption));
@@ -277,6 +277,7 @@ public sealed class MainPage : ContentPage
         var picture = new Image { HeightRequest = 150, Aspect = Aspect.AspectFit };
         picture.SetBinding(Image.SourceProperty, nameof(ConversationTurn.Picture));
         picture.SetBinding(IsVisibleProperty, nameof(ConversationTurn.HasPicture));
+        var sources = new VerticalStackLayout { Spacing = 5, IsVisible = false };
         var content = new VerticalStackLayout { Spacing = 7 };
         content.Children.Add(direction); content.Children.Add(picture);
         if (kind == ConversationTurnKind.AiAnswer)
@@ -287,6 +288,7 @@ public sealed class MainPage : ContentPage
             secondLanguage.SetBinding(Label.TextProperty, nameof(ConversationTurn.Target));
             content.Children.Add(firstLanguage); content.Children.Add(originalRow); content.Children.Add(originalReading);
             content.Children.Add(secondLanguage); content.Children.Add(translatedRow); content.Children.Add(translatedReading);
+            content.Children.Add(sources);
         }
         else if (kind == ConversationTurnKind.AiQuestion)
         {
@@ -309,6 +311,28 @@ public sealed class MainPage : ContentPage
             speakTranslation.IsVisible = !string.IsNullOrWhiteSpace(turn.Target) && !string.IsNullOrWhiteSpace(turn.Translation);
             if (turn.IsAi)
             {
+                if (turn.Kind == ConversationTurnKind.AiAnswer)
+                {
+                    original.FormattedText = CitedAnswer(turn.Original, turn.Citations);
+                    translation.FormattedText = CitedAnswer(turn.Translation, turn.Citations);
+                    sources.Children.Clear();
+                    sources.IsVisible = turn.WebSearchUsed || turn.Citations is { Count: > 0 };
+                    if (turn.Citations is { Count: > 0 } citations)
+                    {
+                        sources.Children.Add(new Label { Text = "Sources", TextColor = Ink, FontSize = 12, FontAttributes = FontAttributes.Bold });
+                        for (var index = 0; index < citations.Count; index++)
+                        {
+                            var citation = citations[index];
+                            var formatted = new FormattedString();
+                            formatted.Spans.Add(SourceSpan($"[{index + 1}] {citation.Title}", citation));
+                            var label = new Label { FormattedText = formatted, MaxLines = 2, LineBreakMode = LineBreakMode.TailTruncation };
+                            label.SetBinding(Label.FontSizeProperty, new Binding(nameof(ReadingFontSize), source: this));
+                            sources.Children.Add(label);
+                        }
+                    }
+                    else if (turn.WebSearchUsed)
+                        sources.Children.Add(new Label { Text = "Web search used. No source links were returned.", TextColor = Muted, FontSize = 12 });
+                }
                 bubble.HorizontalOptions = LayoutOptions.Center;
                 bubble.Margin = new Thickness(8, 6);
                 bubble.BackgroundColor = Color.FromArgb(turn.Kind == ConversationTurnKind.AiAnswer ? "#DDF1DF" : "#ECF6ED");
@@ -332,6 +356,34 @@ public sealed class MainPage : ContentPage
         var button = new ImageButton { Source = "copy.png", BackgroundColor = Colors.Transparent, WidthRequest = 40, HeightRequest = 40, Padding = 10, VerticalOptions = LayoutOptions.Start };
         SemanticProperties.SetDescription(button, description);
         return button;
+    }
+
+    FormattedString CitedAnswer(string text, IReadOnlyList<WebCitation>? citations)
+    {
+        var formatted = new FormattedString();
+        formatted.Spans.Add(new Span { Text = text });
+        if (citations is not null)
+            for (var index = 0; index < citations.Count; index++)
+                formatted.Spans.Add(SourceSpan($" [{index + 1}]", citations[index]));
+        return formatted;
+    }
+
+    Span SourceSpan(string text, WebCitation citation)
+    {
+        var span = new Span { Text = text, TextColor = Color.FromArgb("#245C86"), TextDecorations = TextDecorations.Underline };
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) =>
+        {
+            if (WebCitation.Create(citation.Title, citation.Url) is not { } source) return;
+            try
+            {
+                if (!await Launcher.Default.OpenAsync(new Uri(source.Url))) SetStatus("Could not open this source.");
+            }
+            catch { SetStatus("Could not open this source."); }
+        };
+        span.GestureRecognizers.Add(tap);
+        SemanticProperties.SetDescription(span, "Open source: " + citation.Title);
+        return span;
     }
 
     static ImageButton SpeakerButton(string description)
@@ -727,7 +779,8 @@ public sealed class MainPage : ContentPage
         foreach (var turn in turns.TakeLast(AiChatRequest.MaximumHistoryMessages))
         {
             if (turn.Kind == ConversationTurnKind.AiAnswer)
-                yield return new("assistant", $"{turn.Source}: {turn.Original}\n\n{turn.Target}: {turn.Translation}");
+                yield return new("assistant", $"{turn.Source}: {turn.Original}\n\n{turn.Target}: {turn.Translation}" +
+                    (turn.Citations is { Count: > 0 } links ? "\n\nSources:\n" + string.Join("\n", links.Select((link, index) => $"[{index + 1}] {link.Title}: {link.Url}")) : ""));
             else if (turn.Kind == ConversationTurnKind.AiQuestion)
                 yield return new("user", turn.Original, turn.Attachment);
             else
@@ -740,13 +793,19 @@ public sealed class MainPage : ContentPage
         SetStatus("AI is answering …");
         var image = pendingImage;
         var reply = await WithPreviewAsync(ct, "AI · automatic language detection", preview =>
-            translator.AskAsync(text, first, second, AiContext(), ct, image, preview, showTransliteration, selectedModelId));
+            translator.AskAsync(text, first, second, AiContext(), ct, image, preview, showTransliteration, selectedModelId,
+                () => MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (pageVisible && busy && operation is not null && operation.Token == ct && !ct.IsCancellationRequested)
+                        SetStatus("Searching the web …");
+                })));
         ct.ThrowIfCancellationRequested();
         var primary = reply.FirstLanguageCode == first.Code ? first : second;
         var secondary = primary.Code == first.Code ? second : first;
         var inputLanguage = ConversationLanguage.All.FirstOrDefault(x => x.Code == reply.InputLanguageCode)?.Name ?? "Auto-detected";
         turns.Add(new(inputLanguage, "", text, "", "", "", image, Kind: ConversationTurnKind.AiQuestion));
-        turns.Add(new(primary.Name, secondary.Name, reply.FirstAnswer, reply.SecondAnswer, reply.FirstTransliteration, reply.SecondTransliteration, Kind: ConversationTurnKind.AiAnswer));
+        turns.Add(new(primary.Name, secondary.Name, reply.FirstAnswer, reply.SecondAnswer, reply.FirstTransliteration, reply.SecondTransliteration,
+            Kind: ConversationTurnKind.AiAnswer, Citations: reply.Citations, WebSearchUsed: reply.WebSearchUsed));
         mode.CompleteTurn(first, primary.Code);
         recording.Clear(); SetAttachment(null);
     }
