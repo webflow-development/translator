@@ -1,3 +1,7 @@
+## Koe icon: two people and AI
+
+The app icon represents the three conversation participants: two human speech bubbles above a mint AI bubble with a spark. Blue, pale blue and mint retain the existing palette. The scalable [app icon](Koe-Maui/Resources/AppIcon/appicon.svg) and [launch graphic](Koe-Maui/Resources/Splash/splash.svg) use the same foreground geometry. The app icon has a full square, opaque background; iOS supplies its mask. The launch graphic uses rounded corners on the existing light splash background. A full-resolution RGB [PNG export](store-assets/Koe-Icon-1024.png) is included for previews and future store artwork. Updating the installed icon requires a new build.
+
 ## Automatic web search in AI mode
 
 AI requests include the hosted `web_search` tool and `tool_choice: auto`. The model is instructed to search for current facts, prices, opening hours, local recommendations, source links and explicit verification, while ordinary conversation can answer directly. The device date helps interpret relative dates; no device location or GPS permission is added. Translation requests do not receive the search tool. The existing selected model, ChatGPT OAuth token, bilingual JSON schema, language detection, history, transliteration, `store: false` and `stream: true` are retained. There is no new API key or developer-funded search backend.

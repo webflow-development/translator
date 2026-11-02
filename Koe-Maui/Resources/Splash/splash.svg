@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><path d="M14 22h100v70H55l-30 22V92H14z" fill="#2458cc"/><path d="M34 45h60M34 63h45" stroke="white" stroke-width="8" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4B94C9"/>
+      <stop offset="1" stop-color="#245B9A"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#background)"/>
+  <!-- Two people, with both speech tails pointing toward the shared center. -->
+  <path d="M216 198H404Q476 198 476 270V388Q476 460 404 460H398L420 514L332 460H216Q144 460 144 388V270Q144 198 216 198Z" fill="#FFFFFF"/>
+  <path d="M620 198H808Q880 198 880 270V388Q880 460 808 460H692L604 514L626 460H620Q548 460 548 388V270Q548 198 620 198Z" fill="#D9EEFB"/>
+  <g fill="#3776A8">
+    <circle cx="310" cy="290" r="31"/>
+    <path d="M249 384C249 344 273 329 310 329S371 344 371 384Q371 392 363 392H257Q249 392 249 384Z"/>
+    <circle cx="714" cy="290" r="31"/>
+    <path d="M653 384C653 344 677 329 714 329S775 344 775 384Q775 392 767 392H661Q653 392 653 384Z"/>
+  </g>
+  <!-- The third participant: a mint AI speech bubble with a clear spark. -->
+  <path d="M388 494H636Q714 494 714 572V696Q714 774 636 774H489L376 844L397 774H388Q310 774 310 696V572Q310 494 388 494Z" fill="#8AD9BF"/>
+  <path d="M512 550C523 593 543 613 586 624C543 635 523 655 512 698C501 655 481 635 438 624C481 613 501 593 512 550Z" fill="#1D6079"/>
+  <path d="M608 536L615 556L635 563L615 570L608 590L601 570L581 563L601 556Z" fill="#1D6079"/>
+</svg>
