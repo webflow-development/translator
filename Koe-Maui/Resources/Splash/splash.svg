@@ -1,22 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4B94C9"/>
-      <stop offset="1" stop-color="#245B9A"/>
-    </linearGradient>
-  </defs>
-  <rect width="1024" height="1024" rx="224" fill="url(#background)"/>
-  <!-- Two people, with both speech tails pointing toward the shared center. -->
-  <path d="M216 198H404Q476 198 476 270V388Q476 460 404 460H398L420 514L332 460H216Q144 460 144 388V270Q144 198 216 198Z" fill="#FFFFFF"/>
-  <path d="M620 198H808Q880 198 880 270V388Q880 460 808 460H692L604 514L626 460H620Q548 460 548 388V270Q548 198 620 198Z" fill="#D9EEFB"/>
-  <g fill="#3776A8">
-    <circle cx="310" cy="290" r="31"/>
-    <path d="M249 384C249 344 273 329 310 329S371 344 371 384Q371 392 363 392H257Q249 392 249 384Z"/>
-    <circle cx="714" cy="290" r="31"/>
-    <path d="M653 384C653 344 677 329 714 329S775 344 775 384Q775 392 767 392H661Q653 392 653 384Z"/>
+  <rect width="1024" height="1024" rx="224" fill="#2458CC"/>
+  <!-- Two offset language bubbles overlap behind a central AI participant. -->
+  <g transform="translate(0 20)">
+    <path d="M206 216H434Q512 216 512 294V442Q512 520 434 520H270L186 596L201 520Q128 516 128 442V294Q128 216 206 216Z" fill="#FFFFFF"/>
+    <path d="M252 418L299 290Q306 272 313 290L360 418M270 370H342" fill="none" stroke="#153A78" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M410 432H646Q724 432 724 510V658Q724 736 646 736H499L399 820L418 736H410Q332 736 332 658V510Q332 432 410 432Z" fill="#102D66" opacity=".2"/>
+    <path d="M410 420H646Q724 420 724 498V646Q724 724 646 724H499L399 808L418 724H410Q332 724 332 646V498Q332 420 410 420Z" fill="#8AD9BF"/>
+    <path d="M445 632L484 520Q490 502 496 520L535 632M459 592H521M587 514V632M568 514H606M568 632H606" fill="none" stroke="#153A78" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- The language bubble is the frontmost layer. -->
+    <path d="M582 180H810Q888 180 888 258V406Q888 484 810 484H812L836 560L736 484H582Q504 484 504 406V258Q504 180 582 180Z" fill="#102D66" opacity=".2"/>
+    <path d="M582 168H810Q888 168 888 246V394Q888 472 810 472H812L836 548L736 472H582Q504 472 504 394V246Q504 168 582 168Z" fill="#153A78"/>
+    <!-- Font-independent language character. -->
+    <path d="M689 246L703 264M628 284H764M735 286C725 336 685 380 631 401M659 286C671 336 711 380 764 401" fill="none" stroke="#FFFFFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <!-- The third participant: a mint AI speech bubble with a clear spark. -->
-  <path d="M388 494H636Q714 494 714 572V696Q714 774 636 774H489L376 844L397 774H388Q310 774 310 696V572Q310 494 388 494Z" fill="#8AD9BF"/>
-  <path d="M512 550C523 593 543 613 586 624C543 635 523 655 512 698C501 655 481 635 438 624C481 613 501 593 512 550Z" fill="#1D6079"/>
-  <path d="M608 536L615 556L635 563L615 570L608 590L601 570L581 563L601 556Z" fill="#1D6079"/>
 </svg>

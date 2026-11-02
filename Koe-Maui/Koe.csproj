@@ -19,7 +19,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
-    <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#3776A8" />
+    <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#2458CC" />
     <MauiImage Include="Resources/Images/copy.svg" />
     <MauiImage Include="Resources/Images/microphone.svg" />
     <MauiImage Include="Resources/Images/speaker.svg" />

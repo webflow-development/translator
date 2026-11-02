@@ -1,6 +1,6 @@
 ## Koe icon: two people and AI
 
-The app icon represents the three conversation participants: two human speech bubbles above a mint AI bubble with a spark. Blue, pale blue and mint retain the existing palette. The scalable [app icon](Koe-Maui/Resources/AppIcon/appicon.svg) and [launch graphic](Koe-Maui/Resources/Splash/splash.svg) use the same foreground geometry. The app icon has a full square, opaque background; iOS supplies its mask. The launch graphic uses rounded corners on the existing light splash background. A full-resolution RGB [PNG export](store-assets/Koe-Icon-1024.png) is included for previews and future store artwork. Updating the installed icon requires a new build.
+The app icon uses three overlapping, offset speech bubbles: a white **A**, a mint **AI** in the middle, and a dark-blue **文** on the frontmost layer. The original Koe palette is retained: blue `#2458CC`, white, mint `#8AD9BF` and navy `#153A78`. All three labels are vector paths, so iOS does not need a matching font. The scalable [app icon](Koe-Maui/Resources/AppIcon/appicon.svg) and [launch graphic](Koe-Maui/Resources/Splash/splash.svg) share the same foreground geometry and stacking order. The app icon has a full square, opaque background; iOS supplies its mask. The launch graphic uses rounded corners on the existing light splash background. A full-resolution RGB [PNG export](store-assets/Koe-Icon-1024.png) is included for previews and future store artwork. Updating the installed icon requires a new build.
 
 ## Automatic web search in AI mode
 
