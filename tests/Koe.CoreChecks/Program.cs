@@ -808,6 +808,108 @@ await Check("Stopping or clearing a live preview ignores already queued native r
     if (preview.Update(next, "resurrected words") || preview.Text != "") throw new Exception();
     return Task.CompletedTask;
 });
+await Check("AI keeps earlier words when a native partial resets after a long pause without a final event", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "Ich möchte morgen nach Kyoto fahren.");
+    clock.Advance(TimeSpan.FromSeconds(8));
+    preview.Update(segment, "Und"); preview.Update(segment, "Und am Abend zurück.");
+    if (preview.Text != "Ich möchte morgen nach Kyoto fahren. Und am Abend zurück." || !preview.HasRetainedText) throw new Exception("A silence reset erased earlier speech.");
+    clock.Advance(TimeSpan.FromSeconds(12));
+    preview.Update(segment, "Mit zwei Personen.");
+    if (preview.Text != "Ich möchte morgen nach Kyoto fahren. Und am Abend zurück. Mit zwei Personen.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Cumulative native updates after a pause keep the previous words exactly once", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "Where is the station?"); clock.Advance(TimeSpan.FromSeconds(5));
+    preview.Update(segment, "Where is the station? I am walking.");
+    preview.Update(segment, "Where is the station? I am walking with a friend.");
+    if (preview.Text != "Where is the station? I am walking with a friend.") throw new Exception("A cumulative update duplicated the checkpoint.");
+    return Task.CompletedTask;
+});
+await Check("A delayed opening fragment cannot shorten a retained AI utterance", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "Please show me the way to the hotel."); clock.Advance(TimeSpan.FromSeconds(9));
+    if (preview.Update(segment, "Please show me") || preview.Text != "Please show me the way to the hotel.") throw new Exception();
+    preview.Update(segment, "It is getting late.");
+    if (preview.Text != "Please show me the way to the hotel. It is getting late.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("Native tail overlap after a pause does not duplicate English or Japanese words", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "Please book a room"); clock.Advance(TimeSpan.FromSeconds(4));
+    preview.Update(segment, "a room for tomorrow.");
+    if (preview.Text != "Please book a room for tomorrow.") throw new Exception(preview.Text);
+    preview.Clear(); segment = preview.BeginSegment(true);
+    preview.Update(segment, "明日は京都に行きたい"); clock.Advance(TimeSpan.FromSeconds(7));
+    preview.Update(segment, "行きたいです。");
+    if (preview.Text != "明日は京都に行きたいです。") throw new Exception(preview.Text);
+    return Task.CompletedTask;
+});
+await Check("Long pauses in consecutive native tasks retain every earlier sentence", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var first = preview.BeginSegment(true);
+    preview.Update(first, "First sentence."); var next = preview.BeginSegment(false);
+    preview.Update(next, "Second sentence."); clock.Advance(TimeSpan.FromSeconds(10));
+    preview.Update(next, "Third sentence.");
+    if (preview.Text != "First sentence. Second sentence. Third sentence.") throw new Exception(preview.Text);
+    if (preview.Update(first, "Old task result")) throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("A truncated final file result cannot replace retained live AI speech", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var first = preview.BeginSegment(true);
+    preview.Update(first, "First sentence."); var next = preview.BeginSegment(false);
+    preview.Update(next, "Last sentence.");
+    if (preview.FinalText("Last sentence.") != "First sentence. Last sentence.") throw new Exception();
+    preview.Clear(); first = preview.BeginSegment(true); preview.Update(first, "One full sentence.");
+    clock.Advance(TimeSpan.FromSeconds(6)); preview.RetainAfterSilence();
+    if (preview.FinalText("sentence") != "One full sentence.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("An uninterrupted utterance can still accept native corrections and a full final result", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "I want tea"); clock.Advance(TimeSpan.FromMilliseconds(300));
+    preview.Update(segment, "I wanted tea");
+    if (preview.Text != "I wanted tea" || preview.HasRetainedText || preview.FinalText("I wanted tea, please.") != "I wanted tea, please.") throw new Exception();
+    return Task.CompletedTask;
+});
+await Check("AI draft retains silence-separated words through send and remains protected from manual deletion", async () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    var speech = new FakeSpeech(); var draft = new SpeechDraft(speech);
+    await draft.StartAsync(CultureInfo.GetCultureInfo("de-DE"), default, [CultureInfo.GetCultureInfo("de-DE"), CultureInfo.GetCultureInfo("ja-JP")]);
+    preview.Update(segment, "Ich suche ein Hotel."); speech.Emit(preview.Text);
+    clock.Advance(TimeSpan.FromSeconds(10)); preview.Update(segment, "Für morgen."); speech.Emit(preview.Text);
+    speech.FinalText = preview.FinalText("Für morgen.");
+    if (await draft.FinishAsync() != "Ich suche ein Hotel. Für morgen.") throw new Exception();
+    draft.Edit(""); speech.Emit("late native result");
+    if (draft.Text != "") throw new Exception("Recognition restored deleted text.");
+});
+await Check("Silence checkpoint merging respects accented Latin word boundaries", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "Je voudrais un café"); clock.Advance(TimeSpan.FromSeconds(5));
+    preview.Update(segment, "février est trop tard.");
+    if (preview.Text != "Je voudrais un café février est trop tard.") throw new Exception(preview.Text);
+    preview.Clear(); segment = preview.BeginSegment(true);
+    preview.Update(segment, "Yes."); clock.Advance(TimeSpan.FromSeconds(5));
+    preview.Update(segment, "Yesterday I visited Kyoto.");
+    if (preview.Text != "Yes. Yesterday I visited Kyoto.") throw new Exception(preview.Text);
+    return Task.CompletedTask;
+});
+await Check("An early AI recording can still correct its language before detection has completed", () =>
+{
+    var clock = new PreviewClock(); var preview = new LiveSpeechPreview(clock); var segment = preview.BeginSegment(true);
+    preview.Update(segment, "initial guess"); clock.Advance(TimeSpan.FromSeconds(3)); preview.RetainAfterSilence();
+    if (preview.FinalText("こんにちは", preserveRetained: false) != "こんにちは") throw new Exception();
+    return Task.CompletedTask;
+});
 await Check("Initial live locale follows the device or the selected pair, independently of the last speaker", () =>
 {
     var de = CultureInfo.GetCultureInfo("de-DE"); var ja = CultureInfo.GetCultureInfo("ja-JP"); var swiss = CultureInfo.GetCultureInfo("de-CH");
@@ -987,4 +1089,11 @@ sealed class FakeVoiceSocket(params string[] events) : System.Net.WebSockets.Web
         if (complete) current = null;
         return Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(count, System.Net.WebSockets.WebSocketMessageType.Text, complete));
     }
+}
+
+sealed class PreviewClock : TimeProvider
+{
+    DateTimeOffset now = new(2026, 11, 2, 0, 0, 0, TimeSpan.Zero);
+    public override DateTimeOffset GetUtcNow() => now;
+    public void Advance(TimeSpan elapsed) => now += elapsed;
 }

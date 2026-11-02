@@ -163,18 +163,18 @@ public sealed class IosAutomaticSpeechCapture
         }
         liveTask = liveRecognizer.GetRecognitionTask(request, (result, error) => MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (version != generation || revision != liveRevision || finishing) return;
+            if (version != generation || revision != liveRevision) return;
             if (result is not null && !string.IsNullOrWhiteSpace(result.BestTranscription.FormattedString))
             {
                 var text = result.BestTranscription.FormattedString;
                 var segments = result.BestTranscription.Segments;
                 liveCandidate = new(culture, text, segments.Length == 0 ? 0 : segments.Average(x => (double)x.Confidence), 0);
-                if (preview.Update(segment, text)) TranscriptChanged?.Invoke(preview.Text);
+                if (preview.Update(segment, text) && !finishing) TranscriptChanged?.Invoke(preview.Text);
             }
             if (error is null && result?.Final != true) return;
             lock (audioGate) liveFeed = null;
             liveCompletion?.TrySetResult();
-            if (comparing || !detectionFinished) return;
+            if (finishing || comparing || !detectionFinished) return;
             // Native recognition may end after a silence. Keep the utterance and
             // microphone running; only the user pauses or sends the draft.
             CoreFoundation.DispatchQueue.MainQueue.DispatchAsync(() =>
@@ -259,12 +259,16 @@ public sealed class IosAutomaticSpeechCapture
             probeCancellation?.Cancel();
             EndRecording();
             if (probeTask is not null) await probeTask;
+            await EndLiveAsync(linked.Token);
+            preview.RetainAfterSilence();
             StopLive();
             linked.Token.ThrowIfCancellationRequested();
+            if (detectionFinished && preview.HasRetainedText && !string.IsNullOrWhiteSpace(preview.Text))
+                return preview.FinalText("");
             var result = await AutomaticSpeechRecognition.RecognizeAsync(cultures,
                 (culture, token) => RecognizeFileAsync(audioPath, culture, token, TimeSpan.FromSeconds(15), false), linked.Token);
             linked.Token.ThrowIfCancellationRequested();
-            return result.Text;
+            return preview.FinalText(result.Text, preserveRetained: detectionFinished);
         }
         finally { if (version == generation) Stop(); }
     }
