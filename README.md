@@ -16,6 +16,12 @@ The header has two rows. **Koe** stays centered in the top row, with the ellipsi
 
 Validation covers restart recovery, Unicode, photos, drafts, independent chats/languages, AI source metadata, sorting, deletion, queued saves, corrupt/partial manifests and future-format preservation. Native iPhone layouts, keyboard behavior, background/resume and left-swipe deletion still require a TestFlight check. No updated App Store screenshots have been created for these UI changes yet.
 
+## Sign-in guidance and App Review access
+
+ChatGPT authorization is required for recording, translation and AI replies. On a fresh installation, tapping the microphone or send button now opens an explicit sign-in-required dialog instead of leaving those controls disabled without feedback. The user can continue to the existing ChatGPT sign-in or dismiss the dialog; the draft and photo are retained. Signing in does not automatically record or send the draft. A visible sign-in card and composer hint explain the requirement, and sign-in failures are also shown in the card. Existing busy-operation and chat-switch guards remain in place.
+
+This improves the disconnected experience; it does not provide App Review with an account or implement a demonstration mode. A reviewer being unable to sign in can explain the earlier inactive controls, but this has not been confirmed on the reviewed build or on the reviewer's iPad. App Review still needs a working, authorized test-access arrangement. See [the review access and device-test notes](store-assets/APP_REVIEW_ACCESS.md) before resubmitting.
+
 ## Automatic web search in AI mode
 
 AI requests include the hosted `web_search` tool and `tool_choice: auto`. The model is instructed to search for current facts, prices, opening hours, local recommendations, source links and explicit verification, while ordinary conversation can answer directly. The device date helps interpret relative dates; no device location or GPS permission is added. Translation requests do not receive the search tool. The existing selected model, ChatGPT OAuth token, bilingual JSON schema, language detection, history, transliteration, `store: false` and `stream: true` are retained. There is no new API key or developer-funded search backend.

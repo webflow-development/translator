@@ -73,6 +73,9 @@ public sealed class MainPage : ContentPage
     ImageAttachment? pendingImage;
     bool pickingAttachment;
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
+    const string SignInExplanation = "Sign in with ChatGPT to enable recording, translations and AI replies. No separate Koe account is needed.";
+    readonly Label signInExplanation = new() { Text = SignInExplanation, TextColor = Muted, FontSize = 13 };
+    bool promptingForSignIn;
     readonly Button send = new() { Text = "↑", FontSize = 30, WidthRequest = 56, HeightRequest = 56, CornerRadius = 28, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.Center };
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
     readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
@@ -128,7 +131,7 @@ public sealed class MainPage : ContentPage
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "Two languages. One conversation.", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, new Label { Text = "Connect ChatGPT to translate your messages.", TextColor = Muted, FontSize = 13 }, connect } }
+            Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "ChatGPT sign-in required", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, signInExplanation, connect } }
         };
         messages = new CollectionView
         {
@@ -873,6 +876,7 @@ public sealed class MainPage : ContentPage
     public async Task ConnectAsync()
     {
         if (busy || recording.HasTurn) return;
+        signInExplanation.Text = SignInExplanation;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
@@ -880,13 +884,32 @@ public sealed class MainPage : ContentPage
             else { await auth.SignInAsync(operation.Token); SetStatus(null); }
         }
         catch (OperationCanceledException) { SetStatus("Sign-in cancelled."); }
-        catch (Exception ex) { SetStatus(ex.Message); }
+        catch (Exception ex) { signInExplanation.Text = ex.Message; SetStatus(ex.Message); }
         finally { FinishOperation(); await RefreshModelsAsync(); }
+    }
+
+    async Task ShowSignInRequiredAsync()
+    {
+        if (busy || promptingForSignIn || leavingConversation) return;
+        promptingForSignIn = true;
+        draft.Unfocus();
+        UpdateControls();
+        try
+        {
+            SetStatus("Connect ChatGPT before recording or sending a message. Your draft has been kept.");
+            if (await DisplayAlertAsync("Connect ChatGPT", "Recording, translation and AI replies require a ChatGPT connection. Your draft will be kept. Connect first, then tap the microphone or send button again.", "Connect ChatGPT", "Not now") && !auth.IsConnected)
+            {
+                promptingForSignIn = false;
+                await ConnectAsync();
+            }
+        }
+        finally { promptingForSignIn = false; UpdateControls(); }
     }
 
     async Task TogglePauseAsync()
     {
-        if (busy || !auth.IsConnected) return;
+        if (busy || promptingForSignIn || leavingConversation) return;
+        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
         ShowConversationArea();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
@@ -923,7 +946,9 @@ public sealed class MainPage : ContentPage
 
     async Task SendTextAsync()
     {
-        if (busy || !auth.IsConnected || (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null)) return;
+        if (busy || promptingForSignIn || leavingConversation) return;
+        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
+        if (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null) return;
         draft.Unfocus();
         ++playbackRevision; playback.Stop();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
@@ -1078,12 +1103,12 @@ public sealed class MainPage : ContentPage
         OnPropertyChanged(nameof(IsAccountDisconnected));
         OnPropertyChanged(nameof(AccountName));
         OnPropertyChanged(nameof(CanSelectModel));
-        signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
+        signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy && !promptingForSignIn;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
-        send.IsEnabled = !busy && auth.IsConnected && (recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
+        send.IsEnabled = !busy && !promptingForSignIn && (!auth.IsConnected || recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
         attach.IsEnabled = !busy;
         removeAttachment.IsEnabled = !busy;
-        shutter.IsEnabled = !busy && auth.IsConnected;
+        shutter.IsEnabled = !busy && !promptingForSignIn;
         shutter.Text = busy ? "" : recording.IsRecording ? "Ⅱ" : recording.HasTurn ? "▶" : "";
         shutter.ImageSource = !busy && !recording.HasTurn ? ImageSource.FromFile("microphone.png") : null;
         var buttonColor = busy ? Color.FromArgb("#7E96AB") : recording.IsRecording ? Color.FromArgb("#B63E46") : recording.HasTurn ? Color.FromArgb("#E8BD70") : Color.FromArgb("#CF4F55");
@@ -1102,7 +1127,13 @@ public sealed class MainPage : ContentPage
             else if (recording.IsRecording) hint.Text = "Live text · language is checked automatically.";
             else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
         }
-        SemanticProperties.SetDescription(send, mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
+        if (!auth.IsConnected && !busy)
+        {
+            prompt.Text = "Connect ChatGPT to begin";
+            hint.Text = "Tap the microphone or send button to sign in.";
+            SemanticProperties.SetDescription(shutter, "Connect ChatGPT to enable recording");
+        }
+        SemanticProperties.SetDescription(send, !auth.IsConnected ? "Connect ChatGPT to send messages" : mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
         var speakerGreen = Color.FromArgb("#D1EEDC");
         var speakerInk = Color.FromArgb("#205C3B");
         firstSpeaker.BackgroundColor = !mode.IsAi && mode.FromFirst ? speakerGreen : Colors.Transparent;
