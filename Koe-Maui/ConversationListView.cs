@@ -28,7 +28,7 @@ public sealed class ConversationListView : ContentView
                 Padding = new Thickness(20, 28), Spacing = 12, Children =
                 {
                     new Label { Text = "Your conversations", FontSize = 22, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#19384E"), HorizontalTextAlignment = TextAlignment.Center },
-                    new Label { Text = "Tap + above to start a new chat.\nYour saved conversations will appear here.", FontSize = 15, TextColor = Color.FromArgb("#638295"), HorizontalTextAlignment = TextAlignment.Center }
+                    new Label { Text = "Tap the compose icon above to start a new chat.\nYour saved conversations will appear here.", FontSize = 15, TextColor = Color.FromArgb("#638295"), HorizontalTextAlignment = TextAlignment.Center }
                 }
             }
         };

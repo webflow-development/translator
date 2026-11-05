@@ -1,6 +1,8 @@
 # Code-drawn UI previews
 
-These illustrations explain the layout implemented in commit `e22a192`.
+These illustrations explain the current layout in `MainPage.cs`,
+`ConversationListView.cs` and `SettingsPage.cs`, including the square-and-pencil
+new-chat icon, grouped header controls and the relocated OpenAI voice setup.
 They are **not screenshots captured from the running application or an iPhone**.
 The native app window could not be opened in the current desktop session
 (`GetCursorPos failed: Access is denied`).
@@ -12,11 +14,12 @@ Font rendering, native control appearance, exact spacing, safe areas, keyboard
 behavior and scrolling may differ on a real iPhone. The Settings previews show
 the upper scroll position; account settings remain accessible farther down.
 
-- `Koe-UI-Code-Preview.png`: overview of the embedded chat list, conversation and dark Settings.
+- `Koe-UI-Code-Preview.png`: overview of the embedded chat list, conversation and scrolled dark Settings.
 - `Koe-Preview-Chats.png`: embedded chat list.
 - `Koe-Preview-Conversation.png`: opened conversation.
 - `Koe-Preview-Settings-Dark.png`: dark Settings.
 - `Koe-Preview-Settings-Light.png`: light Settings.
+- `Koe-Preview-Settings-Billing.png`: scrolled Settings showing OpenAI voice immediately below Manage usage.
 
 Each image explicitly carries a preview label. These files are for discussing
 the design, **not for upload to App Store Connect as app screenshots**.

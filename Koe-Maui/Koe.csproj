@@ -23,6 +23,9 @@
     <MauiImage Include="Resources/Images/copy.svg" />
     <MauiImage Include="Resources/Images/microphone.svg" />
     <MauiImage Include="Resources/Images/speaker.svg" />
+    <MauiImage Include="Resources/Images/compose.svg" />
+    <MauiImage Include="Resources/Images/more.svg" />
+    <MauiImage Include="Resources/Images/back.svg" />
     <MauiSplashScreen Include="Resources/Splash/splash.svg" Color="#F3F5FA" BaseSize="128,128" />
   </ItemGroup>
 </Project>

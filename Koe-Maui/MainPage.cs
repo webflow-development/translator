@@ -37,8 +37,8 @@ public sealed class MainPage : ContentPage
     readonly ConversationStore conversationStore;
     readonly ConversationListView conversationList;
     readonly VerticalStackLayout composer;
-    readonly Button chatBack = new() { Text = "‹", FontSize = 35, WidthRequest = 32, HeightRequest = 40, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
-    readonly Button newConversation = new() { Text = "+", FontSize = 29, WidthRequest = 44, HeightRequest = 36, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
+    readonly ImageButton chatBack = new() { Source = "back.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 11, BackgroundColor = Color.FromArgb("#E8F2F9") };
+    readonly ImageButton newConversation = new() { Source = "compose.png", WidthRequest = 48, HeightRequest = 44, Padding = 10, BackgroundColor = Colors.Transparent };
     bool showingConversations = true, initializedConversations;
     Guid conversationId = Guid.NewGuid();
     DateTimeOffset conversationCreatedAt = DateTimeOffset.UtcNow;
@@ -106,29 +106,35 @@ public sealed class MainPage : ContentPage
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
-        var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 44, HeightRequest = 36, Padding = 0 };
-        SemanticProperties.SetDescription(menu, "Conversation options");
+        var menu = new ImageButton { Source = "more.png", BackgroundColor = Colors.Transparent, WidthRequest = 48, HeightRequest = 44, Padding = 10 };
+        SemanticProperties.SetDescription(menu, "Settings");
         menu.Clicked += async (_, _) => { if (!busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
         newConversation.Clicked += async (_, _) => await StartNewConversationAsync();
         SemanticProperties.SetDescription(newConversation, "Start a new conversation");
         var header = new Grid
         {
             Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 10, RowSpacing = 2, BackgroundColor = Colors.White,
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) },
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
             RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }
         };
         SemanticProperties.SetDescription(chatBack, "Show saved conversations");
         chatBack.Clicked += async (_, _) => await BackToChatsAsync();
-        var heading = new Grid { ColumnSpacing = 5, ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
+        var heading = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
         heading.Add(chatBack, 0, 0);
         heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
         header.Add(heading, 0, 0);
-        menu.HorizontalOptions = LayoutOptions.End;
-        header.Add(newConversation, 1, 0);
-        header.Add(menu, 2, 0);
+        var actions = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(48), new(48) } };
+        actions.Add(newConversation, 0, 0); actions.Add(menu, 1, 0);
+        var actionPill = new Border
+        {
+            Content = actions, Padding = 0, HeightRequest = 46, WidthRequest = 98,
+            HorizontalOptions = LayoutOptions.End, BackgroundColor = Color.FromArgb("#E8F2F9"),
+            Stroke = Color.FromArgb("#DCE8F0"), StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 23 }
+        };
+        header.Add(actionPill, 1, 0);
         header.Add(account, 0, 1);
         header.Add(modelPicker, 1, 1);
-        Grid.SetColumnSpan(modelPicker, 2);
         modelPicker.HorizontalOptions = LayoutOptions.End;
         SemanticProperties.SetDescription(modelPicker, "ChatGPT model");
         modelPicker.SelectedIndexChanged += (_, _) =>

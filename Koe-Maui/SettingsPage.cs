@@ -158,13 +158,13 @@ public sealed class SettingsPage : ContentPage
         transliteration.Toggled += (_, e) => owner.SetTransliteration(e.Value);
         body.Children.Add(SettingsStyle.Group(
             Row("文", "Transliteration", transliteration),
-            Action("♪", "Speech voices", owner.ShowVoicesAsync),
-            Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · use iPhone voices")));
+            Action("♪", "Speech voices", owner.ShowVoicesAsync)));
         Note("Transliteration adds a Latin-script reading for languages such as Japanese and Mandarin.");
 
-        Section("ChatGPT account");
+        Section("Account and billing");
         body.Children.Add(SettingsStyle.Group(
             Action("↗", "Manage usage", () => Browser.Default.OpenAsync("https://chatgpt.com/settings/usage")),
+            Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · API key and billing setup"),
             Action("●", owner.IsAccountConnected ? "Sign out" : "Connect ChatGPT", async () =>
             {
                 await Navigation.PopModalAsync();
