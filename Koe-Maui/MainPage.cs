@@ -38,7 +38,7 @@ public sealed class MainPage : ContentPage
     readonly ConversationListView conversationList;
     readonly VerticalStackLayout composer;
     readonly ImageButton chatBack = new() { Source = "back.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 11, BackgroundColor = Color.FromArgb("#E8F2F9") };
-    readonly ImageButton newConversation = new() { Source = "compose.png", WidthRequest = 48, HeightRequest = 44, Padding = 10, BackgroundColor = Colors.Transparent };
+    readonly ImageButton newConversation = new() { Source = "compose.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 10, BackgroundColor = Color.FromArgb("#E8F2F9") };
     bool showingConversations = true, initializedConversations;
     Guid conversationId = Guid.NewGuid();
     DateTimeOffset conversationCreatedAt = DateTimeOffset.UtcNow;
@@ -79,8 +79,7 @@ public sealed class MainPage : ContentPage
     readonly Button firstSpeaker = LanguageButton("English"), secondSpeaker = LanguageButton("Japanese");
     readonly Button aiSpeaker = new() { Text = "AI", FontSize = 14, FontAttributes = FontAttributes.Bold, WidthRequest = 52, HeightRequest = 36, CornerRadius = 18, Padding = 0, TextColor = Color.FromArgb("#205C3B"), BackgroundColor = Colors.White, BorderColor = Color.FromArgb("#9ACCAF"), BorderWidth = 1 };
     readonly Label status = new() { FontSize = 12, TextColor = Muted, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
-    readonly Label account = new() { FontSize = 12, TextColor = Muted, MaxLines = 1, LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center };
-    readonly Picker modelPicker = new() { Title = "Model", FontSize = 12, WidthRequest = 132, HeightRequest = 30, MinimumHeightRequest = 30, VerticalOptions = LayoutOptions.Center, TextColor = Ink, BackgroundColor = Color.FromArgb("#E8F2F9"), ItemDisplayBinding = new Binding(nameof(TranslationModel.Name)) };
+    TranslationModel[] availableModels = [];
     bool updatingModels, loadingModels;
     string selectedModelId = Preferences.Default.Get("koe.model", "");
     readonly Label prompt = new() { FontSize = 17, FontAttributes = FontAttributes.Bold, TextColor = Ink };
@@ -106,47 +105,26 @@ public sealed class MainPage : ContentPage
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
-        var menu = new ImageButton { Source = "more.png", BackgroundColor = Colors.Transparent, WidthRequest = 48, HeightRequest = 44, Padding = 10 };
+        var menu = new ImageButton { Source = "more.png", BackgroundColor = Color.FromArgb("#E8F2F9"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 10 };
         SemanticProperties.SetDescription(menu, "Settings");
         menu.Clicked += async (_, _) => { if (!busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
         newConversation.Clicked += async (_, _) => await StartNewConversationAsync();
         SemanticProperties.SetDescription(newConversation, "Start a new conversation");
-        var header = new Grid
+        var header = new VerticalStackLayout
         {
-            Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 10, RowSpacing = 2, BackgroundColor = Colors.White,
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
-            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }
+            Padding = new Thickness(18, 6, 18, 8), Spacing = 2, BackgroundColor = Colors.White
         };
         SemanticProperties.SetDescription(chatBack, "Show saved conversations");
         chatBack.Clicked += async (_, _) => await BackToChatsAsync();
-        // Equal fixed side slots keep the title centered when the back button is hidden.
-        var heading = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(98), new(GridLength.Star), new(98) } };
-        chatBack.HorizontalOptions = LayoutOptions.Start;
-        chatBack.VerticalOptions = LayoutOptions.Center;
-        heading.Add(chatBack, 0, 0);
+        // The title has its own centered row; chat navigation stays in the row below.
+        var heading = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(44), new(GridLength.Star), new(44) } };
         heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, MaxLines = 1 }, 1, 0);
-        header.Add(heading, 0, 0);
-        Grid.SetColumnSpan(heading, 2);
-        var actions = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(48), new(48) } };
-        actions.Add(newConversation, 0, 0); actions.Add(menu, 1, 0);
-        var actionPill = new Border
-        {
-            Content = actions, Padding = 0, HeightRequest = 46, WidthRequest = 98,
-            HorizontalOptions = LayoutOptions.End, BackgroundColor = Color.FromArgb("#E8F2F9"),
-            Stroke = Color.FromArgb("#DCE8F0"), StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 23 }
-        };
-        heading.Add(actionPill, 2, 0);
-        header.Add(account, 0, 1);
-        header.Add(modelPicker, 1, 1);
-        modelPicker.HorizontalOptions = LayoutOptions.End;
-        SemanticProperties.SetDescription(modelPicker, "ChatGPT model");
-        modelPicker.SelectedIndexChanged += (_, _) =>
-        {
-            if (updatingModels || modelPicker.SelectedItem is not TranslationModel selected) return;
-            selectedModelId = selected.Id;
-            Preferences.Default.Set("koe.model", selectedModelId);
-        };
+        heading.Add(menu, 2, 0);
+        header.Children.Add(heading);
+        var navigation = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(44), new(GridLength.Star), new(44) } };
+        navigation.Add(chatBack, 0, 0);
+        navigation.Add(newConversation, 2, 0);
+        header.Children.Add(navigation);
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
@@ -676,17 +654,17 @@ public sealed class MainPage : ContentPage
         await RefreshModelsAsync();
     }
 
-    async Task RefreshModelsAsync()
+    public async Task RefreshModelsAsync()
     {
         if (!auth.IsConnected)
         {
-            updatingModels = true;
-            modelPicker.ItemsSource = null;
-            updatingModels = false;
+            availableModels = [];
+            NotifyModelChoices();
             return;
         }
         if (loadingModels) return;
         loadingModels = true;
+        NotifyModelChoices();
         var connection = auth.ConnectionKey;
         try
         {
@@ -694,18 +672,29 @@ public sealed class MainPage : ContentPage
             var available = await translator.GetModelsAsync(timeout.Token);
             if (!auth.IsConnected || auth.ConnectionKey != connection) return;
             var selected = available.FirstOrDefault(x => x.Id == selectedModelId) ?? available[0];
-            updatingModels = true;
-            modelPicker.ItemsSource = available;
-            modelPicker.SelectedItem = selected;
+            availableModels = available;
             selectedModelId = selected.Id;
             Preferences.Default.Set("koe.model", selectedModelId);
         }
         catch (Exception) { if (!busy && auth.IsConnected && pageVisible) SetStatus("Could not load model choices. Reconnect to refresh the list."); }
         finally
         {
-            updatingModels = false; loadingModels = false; UpdateControls();
+            loadingModels = false; UpdateControls(); NotifyModelChoices();
             if (auth.IsConnected && auth.ConnectionKey != connection) await RefreshModelsAsync();
         }
+    }
+
+    void NotifyModelChoices()
+    {
+        updatingModels = true;
+        try
+        {
+            OnPropertyChanged(nameof(AvailableModels));
+            OnPropertyChanged(nameof(SelectedModel));
+            OnPropertyChanged(nameof(ModelChoiceHint));
+            OnPropertyChanged(nameof(CanSelectModel));
+        }
+        finally { updatingModels = false; }
     }
 
     protected override void OnDisappearing()
@@ -766,7 +755,25 @@ public sealed class MainPage : ContentPage
     public string SecondLanguageName => second.Name;
     public string CurrentTextSize => TextSizeLabel;
     public bool IsAccountConnected => auth.IsConnected;
+    public bool IsAccountDisconnected => !auth.IsConnected;
     public string AccountName => auth.AccountLabel;
+    public IReadOnlyList<TranslationModel> AvailableModels => availableModels;
+    public bool CanSelectModel => auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && availableModels.Length > 0;
+    public string ModelChoiceHint => !auth.IsConnected ? "Connect ChatGPT to choose a model."
+        : loadingModels ? "Loading your account's models …"
+        : availableModels.Length == 0 ? "Could not load models. Close Settings and reopen to retry."
+        : "Applies to translations and AI replies.";
+    public TranslationModel? SelectedModel
+    {
+        get => availableModels.FirstOrDefault(model => model.Id == selectedModelId);
+        set
+        {
+            if (updatingModels || !CanSelectModel || value is null || !availableModels.Any(model => model.Id == value.Id) || value.Id == selectedModelId) return;
+            selectedModelId = value.Id;
+            Preferences.Default.Set("koe.model", selectedModelId);
+            OnPropertyChanged(nameof(SelectedModel));
+        }
+    }
 
     public Task ShowSettingsAsync(INavigation? navigation = null)
     {
@@ -1066,11 +1073,11 @@ public sealed class MainPage : ContentPage
         livePreview.BackgroundColor = mode.IsAi ? Color.FromArgb("#DDF1DF") : Colors.White;
         firstGreeting.Text = first.Greeting;
         secondGreeting.Text = second.Greeting;
-        account.Text = auth.IsConnected ? "● ChatGPT connected" : "○ ChatGPT not connected";
-        account.TextColor = auth.IsConnected ? Color.FromArgb("#28774E") : Muted;
         draft.PreferredCulture = mode.IsAi ? "" : SourceLanguage.Culture;
-        modelPicker.IsVisible = auth.IsConnected;
-        modelPicker.IsEnabled = auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && modelPicker.ItemsSource is { Count: > 0 };
+        OnPropertyChanged(nameof(IsAccountConnected));
+        OnPropertyChanged(nameof(IsAccountDisconnected));
+        OnPropertyChanged(nameof(AccountName));
+        OnPropertyChanged(nameof(CanSelectModel));
         signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
         send.IsEnabled = !busy && auth.IsConnected && (recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);

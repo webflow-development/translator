@@ -76,7 +76,11 @@ public sealed class SettingsPage : ContentPage
         Refresh();
     }
 
-    protected override void OnAppearing() { base.OnAppearing(); Refresh(); }
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing(); Refresh();
+        await owner.RefreshModelsAsync();
+    }
 
     void Section(string name)
     {
@@ -130,6 +134,42 @@ public sealed class SettingsPage : ContentPage
     void Refresh()
     {
         body.Children.Clear();
+        Section("ChatGPT");
+        var connection = new VerticalStackLayout { Padding = new Thickness(16, 14), Spacing = 4 };
+        var connected = SettingsStyle.Label("● ChatGPT connected", 16);
+        connected.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#28774E"), Color.FromArgb("#7AD5A3"));
+        connected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
+        var disconnected = SettingsStyle.Label("○ ChatGPT not connected", 16, muted: true);
+        disconnected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountDisconnected), source: owner));
+        var accountName = SettingsStyle.Label("", 13, muted: true);
+        accountName.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.AccountName), source: owner));
+        accountName.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
+        connection.Children.Add(connected);
+        connection.Children.Add(disconnected);
+        connection.Children.Add(accountName);
+        var modelPicker = new Picker
+        {
+            Title = "Choose a model", FontSize = 17, HeightRequest = 44, MinimumHeightRequest = 44,
+            BackgroundColor = Colors.Transparent, HorizontalOptions = LayoutOptions.Fill,
+            ItemDisplayBinding = new Binding(nameof(TranslationModel.Name))
+        };
+        modelPicker.SetAppThemeColor(Picker.TextColorProperty, Color.FromArgb("#19384E"), Color.FromArgb("#F5F5F7"));
+        modelPicker.SetAppThemeColor(Picker.TitleColorProperty, Color.FromArgb("#638295"), Color.FromArgb("#B2B2B7"));
+        modelPicker.SetBinding(Picker.ItemsSourceProperty, new Binding(nameof(MainPage.AvailableModels), source: owner));
+        modelPicker.SetBinding(Picker.SelectedItemProperty, new Binding(nameof(MainPage.SelectedModel), BindingMode.TwoWay, source: owner));
+        modelPicker.SetBinding(VisualElement.IsEnabledProperty, new Binding(nameof(MainPage.CanSelectModel), source: owner));
+        SemanticProperties.SetDescription(modelPicker, "ChatGPT model for translations and AI replies");
+        var modelRow = new VerticalStackLayout
+        {
+            Padding = new Thickness(16, 8), Spacing = 0,
+            Children = { SettingsStyle.Label("Model", 13, muted: true), modelPicker }
+        };
+        body.Children.Add(SettingsStyle.Group(connection, modelRow));
+        var modelHint = SettingsStyle.Label("", 13, muted: true);
+        modelHint.Margin = new Thickness(16, 0);
+        modelHint.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.ModelChoiceHint), source: owner));
+        body.Children.Add(modelHint);
+
         Section("Conversation languages");
         body.Children.Add(SettingsStyle.Group(
             Action("1", "First speaker", () => owner.ChangeLanguageAsync(true), owner.FirstLanguageName),

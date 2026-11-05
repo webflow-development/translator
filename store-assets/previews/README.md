@@ -2,8 +2,10 @@
 
 These illustrations explain the current layout in `MainPage.cs`,
 `ConversationListView.cs` and `SettingsPage.cs`, including the square-and-pencil
-new-chat icon, grouped header controls and the relocated OpenAI voice setup.
-The title is centered using equal reserved side slots in both list and chat views.
+new-chat icon, two-row header and the relocated OpenAI voice setup.
+The title is centered in its own top row, with Settings on the right. The back
+and new-chat buttons sit in the row below. Connection status and model selection
+are in the first ChatGPT Settings group.
 They are **not screenshots captured from the running application or an iPhone**.
 The native app window could not be opened in the current desktop session
 (`GetCursorPos failed: Access is denied`).
@@ -13,9 +15,10 @@ Colors, text sizes, grouping, controls and the shared header/composer follow
 dates, connection status and the displayed model are illustrative sample data.
 Font rendering, native control appearance, exact spacing, safe areas, keyboard
 behavior and scrolling may differ on a real iPhone. The Settings previews show
-the upper scroll position; account settings remain accessible farther down.
+the upper scroll position with ChatGPT connection status and model selection;
+billing settings remain accessible farther down.
 
-- `Koe-UI-Code-Preview.png`: overview of the embedded chat list, conversation and scrolled dark Settings.
+- `Koe-UI-Code-Preview.png`: overview of the embedded chat list, conversation and ChatGPT Settings.
 - `Koe-Preview-Chats.png`: embedded chat list.
 - `Koe-Preview-Conversation.png`: opened conversation.
 - `Koe-Preview-Settings-Dark.png`: dark Settings.
