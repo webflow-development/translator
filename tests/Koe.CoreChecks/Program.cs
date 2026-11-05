@@ -1134,6 +1134,7 @@ await Check("Read-aloud and copied answers omit opaque citation markers and pres
     if (cleaned != "京都について Japan tourism" || WebCitation.CleanAnswer("[Unknown](https://unverified.example/)", citations) != "[Unknown](https://unverified.example/)") throw new Exception(cleaned);
     return Task.CompletedTask;
 });
+await ConversationStoreChecks.RunAsync(Check);
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class KeyHandler(string json) : HttpMessageHandler

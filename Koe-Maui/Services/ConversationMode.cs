@@ -23,4 +23,9 @@ public sealed class ConversationMode
     {
         IsAi = false; FromFirst = true; LastSpeakerCode = null;
     }
+
+    public void Restore(bool isAi, bool fromFirst, string? lastSpeakerCode)
+    {
+        IsAi = isAi; FromFirst = fromFirst; LastSpeakerCode = lastSpeakerCode;
+    }
 }

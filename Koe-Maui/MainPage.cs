@@ -5,8 +5,6 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Koe;
 
-public enum ConversationTurnKind { Translation, AiQuestion, AiAnswer }
-
 public sealed record ConversationTurn(string Source, string Target, string Original, string Translation, string SourceTransliteration, string TargetTransliteration, ImageAttachment? Attachment = null, bool FromFirst = true, ConversationTurnKind Kind = ConversationTurnKind.Translation, IReadOnlyList<WebCitation>? Citations = null, bool WebSearchUsed = false)
 {
     public string Direction => Kind == ConversationTurnKind.AiAnswer ? (WebSearchUsed ? "AI · Web search" : "AI") : Kind == ConversationTurnKind.AiQuestion ? $"You → AI · {Source}" : string.IsNullOrWhiteSpace(Target) ? Source : $"{Source}  →  {Target}";
@@ -36,6 +34,13 @@ public sealed class MainPage : ContentPage
     readonly SpeechDraft recording;
     readonly SpeechOutput playback;
     readonly OpenAiVoiceSettings voiceSettings;
+    readonly ConversationStore conversationStore;
+    Guid conversationId = Guid.NewGuid();
+    DateTimeOffset conversationCreatedAt = DateTimeOffset.UtcNow;
+    bool conversationDirty, restoringConversation, leavingConversation;
+    int saveRevision;
+    Task pendingSave = Task.CompletedTask;
+    INavigation? settingsNavigation;
     int playbackRevision;
     readonly ObservableCollection<ConversationTurn> turns = [];
     readonly Label liveCaption = new() { FontSize = 11, TextColor = Muted };
@@ -87,23 +92,31 @@ public sealed class MainPage : ContentPage
     ConversationLanguage SourceLanguage => mode.FromFirst ? first : second;
     ConversationLanguage TargetLanguage => mode.FromFirst ? second : first;
 
-    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings)
+    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings, ConversationStore conversationStore)
     {
         if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
-        this.auth = auth; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings; recording = new SpeechDraft(speech);
+        this.auth = auth; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings;
+        this.conversationStore = conversationStore; recording = new SpeechDraft(speech);
+        NavigationPage.SetHasNavigationBar(this, false);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
         var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 44, HeightRequest = 36, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Conversation options");
-        menu.Clicked += async (_, _) => await ShowMenuAsync();
+        menu.Clicked += async (_, _) => { if (!busy && !recording.HasTurn) await ShowSettingsAsync(); };
         var header = new Grid
         {
             Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 10, RowSpacing = 2, BackgroundColor = Colors.White,
             ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
             RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }
         };
-        header.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        var back = new Button { Text = "‹", FontSize = 35, WidthRequest = 32, HeightRequest = 40, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
+        SemanticProperties.SetDescription(back, "Back to Chats");
+        back.Clicked += async (_, _) => await BackToChatsAsync();
+        var heading = new Grid { ColumnSpacing = 5, ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
+        heading.Add(back, 0, 0);
+        heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
+        header.Add(heading, 0, 0);
         menu.HorizontalOptions = LayoutOptions.End;
         header.Add(menu, 1, 0);
         header.Add(account, 0, 1);
@@ -189,9 +202,9 @@ public sealed class MainPage : ContentPage
             if (recording.HasTurn || !string.IsNullOrWhiteSpace(recording.Text) || pendingImage is not null) DiscardInput();
             else operation?.Cancel();
         };
-        firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(true, first.Code); SetStatus(null); UpdateControls(); } };
-        secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(false, second.Code); SetStatus(null); UpdateControls(); } };
-        aiSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectAi(); SetStatus(null); UpdateControls(); } };
+        firstSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(true, first.Code); SetStatus(null); UpdateControls(); MarkConversationChanged(); } };
+        secondSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectSpeaker(false, second.Code); SetStatus(null); UpdateControls(); MarkConversationChanged(); } };
+        aiSpeaker.Clicked += (_, _) => { if (!busy && !recording.HasTurn) { mode.SelectAi(); SetStatus(null); UpdateControls(); MarkConversationChanged(); } };
         draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
         draft.Focused += async (_, _) =>
         {
@@ -200,15 +213,153 @@ public sealed class MainPage : ContentPage
             try { await TogglePauseAsync(); }
             finally { pausingForEdit = false; UpdateControls(); }
         };
-        recording.Changed += () => MainThread.BeginInvokeOnMainThread(SyncDraft);
+        recording.Changed += () => { if (MainThread.IsMainThread) SyncDraft(); else MainThread.BeginInvokeOnMainThread(SyncDraft); };
         recording.Error += error => MainThread.BeginInvokeOnMainThread(() => { if (!busy) SetStatus(error); });
-        turns.CollectionChanged += (_, _) => ScrollToLatest();
+        turns.CollectionChanged += (_, _) => { ScrollToLatest(); MarkConversationChanged(); };
         messages.SizeChanged += (_, _) => ScrollToLatest();
         messages.Loaded += (_, _) => ScrollToLatest();
         draft.FontSize = OriginalFontSize + 2;
         draft.HandlerChanged += (_, _) => AlignComposerText();
         draft.Loaded += (_, _) => AlignComposerText();
         UpdateControls();
+    }
+
+    public async Task LoadAccountAsync()
+    {
+        try { await auth.LoadAsync(); }
+        catch { SetStatus("Could not load your sign-in. Please reconnect."); }
+        UpdateControls();
+    }
+
+    ConversationSnapshot CaptureConversation() => new(conversationId, conversationCreatedAt, first.Code, second.Code,
+        turns.Select(turn => new ConversationMessage(turn.Source, turn.Target, turn.Original, turn.Translation,
+            turn.SourceTransliteration, turn.TargetTransliteration, turn.Attachment, turn.FromFirst, turn.Kind,
+            turn.Citations?.ToArray(), turn.WebSearchUsed)).ToArray())
+    {
+        Draft = recording.Text, DraftImage = pendingImage, IsAi = mode.IsAi,
+        FromFirst = mode.FromFirst, LastSpeakerCode = mode.LastSpeakerCode
+    };
+
+    void MarkConversationChanged()
+    {
+        if (restoringConversation) return;
+        conversationDirty = true;
+        var revision = ++saveRevision;
+        var id = conversationId;
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(650), () =>
+        {
+            if (revision == saveRevision && id == conversationId && !restoringConversation)
+                _ = FlushConversationSafelyAsync();
+        });
+    }
+
+    public Task FlushConversationAsync()
+    {
+        ++saveRevision;
+        if (restoringConversation || !conversationDirty) return pendingSave;
+        var snapshot = CaptureConversation(); // Capture before any await or a chat switch.
+        conversationDirty = false;
+        var previous = pendingSave;
+        pendingSave = SaveAfterAsync(previous, snapshot);
+        return pendingSave;
+    }
+
+    async Task SaveAfterAsync(Task previous, ConversationSnapshot snapshot)
+    {
+        try { await previous; }
+        catch { /* Retry the latest complete snapshot after an earlier failed save. */ }
+        try { await conversationStore.SaveAsync(snapshot); }
+        catch (Exception ex)
+        {
+            if (snapshot.Id == conversationId) conversationDirty = true;
+            throw new IOException("Could not save this conversation. Please check the available storage and try again.", ex);
+        }
+    }
+
+    async Task FlushConversationSafelyAsync()
+    {
+        try { await FlushConversationAsync(); }
+        catch { if (pageVisible) SetStatus("Could not save this chat. Please check the available storage and try again."); }
+    }
+
+    public async Task SuspendAndSaveAsync()
+    {
+        playback.Stop();
+        if (recording.IsRecording) recording.Suspend();
+        await FlushConversationSafelyAsync();
+    }
+
+    public async Task PrepareNewConversationAsync()
+    {
+        if (busy) throw new InvalidOperationException("Please wait for the current request to finish.");
+        await FlushConversationAsync();
+        ApplyConversation(null);
+    }
+
+    public async Task OpenConversationAsync(Guid id)
+    {
+        if (busy) throw new InvalidOperationException("Please wait for the current request to finish.");
+        await FlushConversationAsync();
+        var snapshot = await conversationStore.LoadAsync(id) ?? throw new IOException("This conversation is no longer available.");
+        ApplyConversation(snapshot);
+    }
+
+    static ConversationLanguage SavedLanguage(string code)
+    {
+        var known = ConversationLanguage.All.FirstOrDefault(x => x.Code == code);
+        if (known is not null) return known;
+        var culture = CultureInfo.GetCultureInfo(code);
+        return new(code, culture.EnglishName, culture.IsNeutralCulture ? CultureInfo.CreateSpecificCulture(code).Name : culture.Name);
+    }
+
+    void ApplyConversation(ConversationSnapshot? snapshot)
+    {
+        restoringConversation = true; ++saveRevision;
+        try
+        {
+            ++playbackRevision; playback.Stop(); recording.Clear();
+            conversationId = snapshot?.Id ?? Guid.NewGuid();
+            conversationCreatedAt = snapshot?.CreatedAt ?? DateTimeOffset.UtcNow;
+            first = SavedLanguage(snapshot?.FirstLanguageCode ?? Preferences.Default.Get("koe.language.first", "en"));
+            second = SavedLanguage(snapshot?.SecondLanguageCode ?? Preferences.Default.Get("koe.language.second", "ja"));
+            if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
+            turns.Clear();
+            if (snapshot is not null)
+                foreach (var message in snapshot.Messages)
+                    turns.Add(new(message.Source, message.Target, message.Original, message.Translation,
+                        message.SourceTransliteration, message.TargetTransliteration, message.Attachment, message.FromFirst,
+                        message.Kind, message.Citations, message.WebSearchUsed));
+            mode.Restore(snapshot?.IsAi ?? false, snapshot?.FromFirst ?? true, snapshot?.LastSpeakerCode);
+            recording.Edit(snapshot?.Draft ?? "");
+            SyncDraft(); SetAttachment(snapshot?.DraftImage);
+            livePreview.IsVisible = false; liveTranslation.Text = ""; SetStatus(null);
+            conversationDirty = false;
+            UpdateControls();
+        }
+        finally { restoringConversation = false; }
+        ScrollToLatest();
+    }
+
+    async Task BackToChatsAsync()
+    {
+        if (leavingConversation || busy) return;
+        leavingConversation = true;
+        try
+        {
+            draft.Unfocus();
+            if (recording.IsRecording) await recording.PauseAsync();
+            playback.Stop();
+            await FlushConversationAsync();
+            await Navigation.PopAsync();
+        }
+        catch { await DisplayAlertAsync("Could not save conversation", "Please check the available storage and try again. Your chat is still open.", "OK"); }
+        finally { leavingConversation = false; }
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = BackToChatsAsync();
+        return true;
     }
 
     void AlignComposerText()
@@ -410,7 +561,7 @@ public sealed class MainPage : ContentPage
         catch (Exception ex) { if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording) SetStatus(ex.Message); }
     }
 
-    async Task ShowVoicesAsync()
+    public async Task ShowVoicesAsync()
     {
         if (voiceSettings.Enabled) { await ShowOpenAiVoiceSettingsAsync(); return; }
         var language = await PickLanguageAsync("Voice language", ConversationLanguage.All);
@@ -430,11 +581,11 @@ public sealed class MainPage : ContentPage
         catch (Exception ex) { SetStatus(ex.Message); }
     }
 
-    async Task ShowOpenAiVoiceSettingsAsync()
+    public async Task ShowOpenAiVoiceSettingsAsync()
     {
         ++playbackRevision;
         playback.Stop();
-        await Navigation.PushModalAsync(new OpenAiVoicePage(voiceSettings));
+        await (settingsNavigation ?? Navigation).PushModalAsync(new OpenAiVoicePage(voiceSettings));
     }
 
     async Task CopyTextAsync(string text)
@@ -458,8 +609,7 @@ public sealed class MainPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing(); pageVisible = true;
-        try { await auth.LoadAsync(); }
-        catch { SetStatus("Could not load your sign-in. Please reconnect."); }
+        await LoadAccountAsync();
         UpdateControls();
         await RefreshModelsAsync();
     }
@@ -501,6 +651,7 @@ public sealed class MainPage : ContentPage
         ++playbackRevision;
         playback.Stop();
         if (!pickingAttachment) { pageVisible = false; operation?.Cancel(); recording.Suspend(); }
+        if (!pickingAttachment) _ = FlushConversationSafelyAsync();
         base.OnDisappearing();
     }
 
@@ -545,81 +696,80 @@ public sealed class MainPage : ContentPage
         attachmentName.Text = image?.Name;
         attachmentCard.IsVisible = image is not null;
         UpdateControls();
+        MarkConversationChanged();
     }
 
-    async Task ShowMenuAsync()
+    public string FirstLanguageName => first.Name;
+    public string SecondLanguageName => second.Name;
+    public string CurrentTextSize => TextSizeLabel;
+    public bool IsAccountConnected => auth.IsConnected;
+    public string AccountName => auth.AccountLabel;
+
+    public Task ShowSettingsAsync(INavigation? navigation = null)
     {
-        if (busy || recording.HasTurn) return;
-        var selection = await DisplayActionSheetAsync(auth.IsConnected ? $"ChatGPT · {auth.AccountLabel}" : "Conversation", "Close", null, "Settings", "Clear history", "Manage usage", auth.IsConnected ? "Sign out" : "Connect ChatGPT");
-        switch (selection)
-        {
-            case "Clear history": ++playbackRevision; playback.Stop(); turns.Clear(); break;
-            case "Settings": await ShowSettingsAsync(); break;
-            case "Manage usage": await Browser.Default.OpenAsync("https://chatgpt.com/settings/usage"); break;
-            case "Sign out": case "Connect ChatGPT": await ConnectAsync(); break;
-        }
+        settingsNavigation = navigation ?? Navigation;
+        return settingsNavigation.PushModalAsync(new SettingsPage(this, voiceSettings));
     }
 
-    async Task ShowSettingsAsync()
+    public async Task ChangeLanguageAsync(bool changeFirst)
     {
-        var transliterationAction = showTransliteration ? "Hide transliteration" : "Show transliteration";
-        var openAiAction = "OpenAI voice · " + (voiceSettings.Enabled ? "On" : "Off");
-        var choice = await DisplayActionSheetAsync("Settings", "Close", null, "Conversation languages", openAiAction, "Speech voices", $"Text size · {TextSizeLabel}", transliterationAction);
-        if (choice == openAiAction) { await ShowOpenAiVoiceSettingsAsync(); return; }
-        if (choice == "Speech voices") { await ShowVoicesAsync(); return; }
-        if (choice == "Conversation languages") { await ShowLanguagesAsync(); return; }
-        if (choice == transliterationAction)
-        {
-            showTransliteration = !showTransliteration;
-            Preferences.Default.Set("koe.show-transliteration", showTransliteration);
-            OnPropertyChanged(nameof(ShowTransliteration));
-            ScrollToLatest();
-        }
-        else if (choice == $"Text size · {TextSizeLabel}") await ShowTextSizeAsync();
-    }
-
-    async Task ShowLanguagesAsync()
-    {
-        var selectedFirst = await PickLanguageAsync("First speaker's language", ConversationLanguage.All);
-        if (selectedFirst is null) return;
-        var selectedSecond = await PickLanguageAsync("Second speaker's language", ConversationLanguage.All.Where(x => x.Code != selectedFirst.Code).ToArray());
-        if (selectedSecond is null) return;
-        first = selectedFirst; second = selectedSecond; mode.Reset();
+        var other = changeFirst ? second : first;
+        var selected = await PickLanguageAsync(changeFirst ? "First speaker's language" : "Second speaker's language",
+            ConversationLanguage.All.Where(x => x.Code != other.Code).ToArray());
+        if (selected is null) return;
+        if (changeFirst) first = selected; else second = selected;
+        mode.Reset();
         Preferences.Default.Set("koe.language.first", first.Code);
         Preferences.Default.Set("koe.language.second", second.Code);
         UpdateControls();
+        MarkConversationChanged();
+    }
+
+    public void SetTransliteration(bool value)
+    {
+        showTransliteration = value;
+        Preferences.Default.Set("koe.show-transliteration", value);
+        OnPropertyChanged(nameof(ShowTransliteration));
+        ScrollToLatest();
     }
 
     async Task<ConversationLanguage?> PickLanguageAsync(string title, ConversationLanguage[] choices)
     {
+        var navigation = settingsNavigation ?? Navigation;
         var completion = new TaskCompletionSource<ConversationLanguage?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var closing = false;
         var search = new SearchBar { Placeholder = "Search languages", BackgroundColor = Colors.White };
+        search.SetAppThemeColor(SearchBar.TextColorProperty, Ink, Colors.White);
+        search.SetAppThemeColor(SearchBar.PlaceholderColorProperty, Muted, Color.FromArgb("#B2B2B7"));
+        search.SetAppThemeColor(VisualElement.BackgroundColorProperty, Colors.White, Color.FromArgb("#333333"));
         var list = new CollectionView
         {
             ItemsSource = choices, SelectionMode = SelectionMode.Single,
             ItemTemplate = new DataTemplate(() =>
             {
                 var name = new Label { FontSize = 18, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center };
+                SettingsStyle.Ink(name);
                 name.SetBinding(Label.TextProperty, nameof(ConversationLanguage.Name));
                 return new Grid { Padding = new Thickness(18, 14), MinimumHeightRequest = 52, Children = { name } };
             })
         };
         var close = new Button { Text = "Cancel", TextColor = Blue, BackgroundColor = Colors.Transparent };
         var heading = new Grid { Padding = new Thickness(16, 8), ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        heading.Add(new Label { Text = title, FontSize = 20, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        var languageHeading = SettingsStyle.Label(title, 20); languageHeading.FontAttributes = FontAttributes.Bold;
+        heading.Add(languageHeading, 0, 0);
         heading.Add(close, 1, 0);
         var content = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) } };
         content.Add(heading, 0, 0); content.Add(search, 0, 1);
         content.Add(new Label { Text = $"{choices.Length} languages · Some require an internet connection", TextColor = Muted, FontSize = 12, Margin = new Thickness(18, 4) }, 0, 2);
         content.Add(list, 0, 3);
         var page = new ContentPage { Title = title, SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All, BackgroundColor = Color.FromArgb("#F0F6FA"), Content = content };
+        SettingsStyle.Background(page);
         async Task CloseAsync(ConversationLanguage? selected)
         {
             if (closing) return;
             closing = true;
             search.Unfocus();
-            await Navigation.PopModalAsync();
+            await navigation.PopModalAsync();
             completion.TrySetResult(selected);
         }
         close.Clicked += async (_, _) => await CloseAsync(null);
@@ -633,13 +783,12 @@ public sealed class MainPage : ContentPage
             list.ItemsSource = choices.Where(x => x.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         };
         page.Disappearing += (_, _) => { if (!closing) completion.TrySetResult(null); };
-        await Navigation.PushModalAsync(page);
+        await navigation.PushModalAsync(page);
         return await completion.Task;
     }
 
-    async Task ShowTextSizeAsync()
+    public void SetTextSize(string selection)
     {
-        var selection = await DisplayActionSheetAsync($"Text size · {TextSizeLabel}", "Cancel", null, "Small", "Medium", "Large");
         if (selection is not ("Small" or "Medium" or "Large")) return;
         textSize = selection == "Small" ? "Klein" : selection == "Large" ? "Groß" : "Mittel";
         Preferences.Default.Set("koe.text-size", textSize);
@@ -651,7 +800,7 @@ public sealed class MainPage : ContentPage
         ScrollToLatest();
     }
 
-    async Task ConnectAsync()
+    public async Task ConnectAsync()
     {
         if (busy || recording.HasTurn) return;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
@@ -698,6 +847,7 @@ public sealed class MainPage : ContentPage
         try { if (draft.Text != recording.Text) draft.Text = recording.Text; }
         finally { syncingDraft = false; }
         UpdateControls();
+        MarkConversationChanged();
     }
 
     async Task SendTextAsync()
@@ -722,6 +872,7 @@ public sealed class MainPage : ContentPage
                 await TranslateDraftAsync(text, operation.Token);
                 SetStatus("Translated. The next speaker can start recording.");
             }
+            await FlushConversationAsync();
         }
         catch (OperationCanceledException) { recording.Suspend(); SetStatus(mode.IsAi ? "AI request cancelled. Your draft has been kept." : "Translation cancelled. Your draft has been kept."); }
         catch (Exception ex) { recording.Suspend(); SetStatus(ex.Message); }

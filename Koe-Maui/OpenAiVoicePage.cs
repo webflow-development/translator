@@ -23,16 +23,21 @@ public sealed class OpenAiVoicePage : ContentPage
         this.settings = settings;
         Title = "OpenAI voice";
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
-        BackgroundColor = Color.FromArgb("#F0F6FA");
-        enabled = new Switch { IsToggled = settings.Enabled };
+        SettingsStyle.Background(this);
+        key.SetAppThemeColor(Entry.TextColorProperty, Ink, Colors.White);
+        key.SetAppThemeColor(Entry.PlaceholderColorProperty, Muted, Color.FromArgb("#B2B2B7"));
+        key.SetAppThemeColor(VisualElement.BackgroundColorProperty, Colors.White, Color.FromArgb("#333333"));
+        voice.SetAppThemeColor(Picker.TextColorProperty, Ink, Colors.White);
+        voice.SetAppThemeColor(Picker.TitleColorProperty, Muted, Color.FromArgb("#B2B2B7"));
+        voice.SetAppThemeColor(VisualElement.BackgroundColorProperty, Colors.White, Color.FromArgb("#333333"));
+        SettingsStyle.Muted(keyStatus);
+        enabled = new Switch { IsToggled = settings.Enabled, OnColor = Color.FromArgb("#34C759") };
         voice.SelectedItem = OpenAiSpeechClient.Voices.Contains(settings.Voice) ? settings.Voice : "marin";
         var close = new Button { Text = "Close", BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#19384E") };
         close.Clicked += async (_, _) => { if (!saving) await CloseAsync(); };
-        var heading = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        heading.Add(new Label { Text = "OpenAI voice", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#19384E"), VerticalTextAlignment = TextAlignment.Center }, 0, 0);
-        heading.Add(close, 1, 0);
-        var toggleRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
-        toggleRow.Add(new Label { TextColor = Ink, Text = "Use OpenAI voice", FontSize = 17, VerticalTextAlignment = TextAlignment.Center }, 0, 0);
+        var heading = SettingsStyle.Header("OpenAI voice", close);
+        var toggleRow = new Grid { Padding = 16, MinimumHeightRequest = 62, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        toggleRow.Add(SettingsStyle.Label("Use OpenAI voice"), 0, 0);
         toggleRow.Add(enabled, 1, 0);
         SemanticProperties.SetDescription(enabled, "Use paid OpenAI speech instead of iPhone speech");
         enabled.Toggled += async (_, e) =>
@@ -53,6 +58,7 @@ public sealed class OpenAiVoicePage : ContentPage
         var keys = Link("2. Create an API key", "https://platform.openai.com/api-keys");
         var pricing = Link("View current OpenAI API prices", "https://developers.openai.com/api/docs/pricing");
         var remove = new Button { Text = "Remove saved key", TextColor = Color.FromArgb("#B63E46"), BackgroundColor = Colors.Transparent };
+        remove.SetAppThemeColor(Button.TextColorProperty, Color.FromArgb("#B63E46"), Color.FromArgb("#FF6969"));
         remove.Clicked += async (_, _) =>
         {
             if (saving || confirming) return;
@@ -76,28 +82,45 @@ public sealed class OpenAiVoicePage : ContentPage
             catch (Exception) { await DisplayAlertAsync("Could not save", "Check that your API key contains no spaces and try again. Your key is required when OpenAI voice is enabled.", "OK"); }
             finally { saving = false; save.IsEnabled = enabled.IsEnabled = true; }
         };
+        Label Note(string text, bool small = false)
+        {
+            var label = SettingsStyle.Label(text, small ? 13 : 15, muted: small);
+            label.LineHeight = 1.15;
+            return label;
+        }
+        var steps = new VerticalStackLayout
+        {
+            Padding = 16, Spacing = 14, Children =
+            {
+                Note("1. Sign in to the OpenAI API platform. Add a payment method or API credits if needed. Check your usage budget and billing settings."), billing,
+                Note("2. Open API keys, select your project and choose Create new secret key. Give the key a name such as Koe voice, allow Realtime requests, and copy it. The full secret is normally shown only once."), keys,
+                Note("3. Return to Koe and paste the key below. Choose a voice, turn on Use OpenAI voice, accept the cost notice, then tap Save."),
+                Note("4. Tap a speaker beside a chat message to listen. Tap it again to stop. Turn this setting off at any time to return to iPhone voices.")
+            }
+        };
         var body = new VerticalStackLayout
         {
-            Padding = 20, Spacing = 14, Children =
+            Padding = new Thickness(16, 8, 16, 30), Spacing = 14, Children =
             {
-                heading, toggleRow,
-                new Label { TextColor = Ink, Text = "Off uses the iPhone voices. On uses an AI-generated OpenAI voice with additional API charges.", FontSize = 15, LineHeight = 1.15 },
-                new Label { TextColor = Ink, Text = "Set up step by step", FontSize = 18, FontAttributes = FontAttributes.Bold },
-                new Label { TextColor = Ink, Text = "1. Sign in to the OpenAI API platform. Add a payment method or API credits if needed. Check your usage budget and billing settings.", FontSize = 15, LineHeight = 1.15 }, billing,
-                new Label { TextColor = Ink, Text = "2. Open API keys, select your project and choose Create new secret key. Give the key a name such as Koe voice, allow Realtime requests, and copy it. The full secret is normally shown only once.", FontSize = 15, LineHeight = 1.15 }, keys,
-                new Label { TextColor = Ink, Text = "3. Return to Koe and paste the key below. Choose a voice, turn on Use OpenAI voice, accept the cost notice, then tap Save.", FontSize = 15, LineHeight = 1.15 },
-                key, keyStatus, voice,
-                new Label { TextColor = Ink, Text = "4. Tap a speaker beside a chat message to listen. Tap it again to stop. Turn this setting off at any time to return to iPhone voices.", FontSize = 15, LineHeight = 1.15 },
-                new Label { Text = "Your personal key is stored in the iPhone Keychain. Leave the field empty to keep a saved key. Never share it in chat or screenshots. No audio is generated just by saving these settings.", FontSize = 13, TextColor = Muted },
+                SettingsStyle.Group(toggleRow),
+                Note("Off uses the iPhone voices. On uses an AI-generated OpenAI voice with additional API charges.", true),
+                SettingsStyle.Label("Set up step by step", 17, muted: true), SettingsStyle.Group(steps),
+                SettingsStyle.Label("API key and voice", 17, muted: true),
+                SettingsStyle.Group(new VerticalStackLayout { Padding = 16, Spacing = 12, Children = { key, keyStatus, voice } }),
+                Note("Your personal key is stored in the iPhone Keychain. Leave the field empty to keep a saved key. No audio is generated just by saving these settings.", true),
                 pricing, save, remove
             }
         };
-        Content = new ScrollView { Content = body };
+        var layout = new Grid { RowDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
+        layout.Add(heading, 0, 0); layout.Add(new ScrollView { Content = body }, 0, 1);
+        Content = layout;
     }
 
     Button Link(string title, string url)
     {
         var button = new Button { Text = title, FontSize = 14, TextColor = Color.FromArgb("#3679AC"), BackgroundColor = Colors.White };
+        button.SetAppThemeColor(Button.TextColorProperty, Color.FromArgb("#287CA8"), Color.FromArgb("#64D2FF"));
+        button.SetAppThemeColor(VisualElement.BackgroundColorProperty, Colors.White, Color.FromArgb("#333333"));
         button.Clicked += async (_, _) =>
         {
             try { await Browser.Default.OpenAsync(url, BrowserLaunchMode.SystemPreferred); }

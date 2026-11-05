@@ -14,6 +14,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<OpenAiSpeechClient>();
         builder.Services.AddSingleton<OpenAiVoiceSettings>();
         builder.Services.AddSingleton<SpeechOutput>();
+        builder.Services.AddSingleton(new ConversationStore(Path.Combine(FileSystem.Current.AppDataDirectory, "conversations")));
 #if IOS
         builder.ConfigureMauiHandlers(handlers => handlers.AddHandler<ConversationEditor, Platforms.iOS.ConversationEditorHandler>());
         var speechLocales = new List<string>();
@@ -29,6 +30,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlayback, UnsupportedAudioPlayback>();
 #endif
         builder.Services.AddSingleton<MainPage>();
+        builder.Services.AddSingleton<ChatsPage>();
         return builder.Build();
     }
 }
