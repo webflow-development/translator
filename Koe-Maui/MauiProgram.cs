@@ -30,7 +30,6 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlayback, UnsupportedAudioPlayback>();
 #endif
         builder.Services.AddSingleton<MainPage>();
-        builder.Services.AddSingleton<ChatsPage>();
         return builder.Build();
     }
 }

@@ -35,6 +35,11 @@ public sealed class MainPage : ContentPage
     readonly SpeechOutput playback;
     readonly OpenAiVoiceSettings voiceSettings;
     readonly ConversationStore conversationStore;
+    readonly ConversationListView conversationList;
+    readonly VerticalStackLayout composer;
+    readonly Button chatBack = new() { Text = "‹", FontSize = 35, WidthRequest = 32, HeightRequest = 40, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
+    readonly Button newConversation = new() { Text = "+", FontSize = 29, WidthRequest = 44, HeightRequest = 36, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
+    bool showingConversations = true, initializedConversations;
     Guid conversationId = Guid.NewGuid();
     DateTimeOffset conversationCreatedAt = DateTimeOffset.UtcNow;
     bool conversationDirty, restoringConversation, leavingConversation;
@@ -103,24 +108,28 @@ public sealed class MainPage : ContentPage
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
         var menu = new Button { Text = "•••", FontSize = 23, TextColor = Ink, BackgroundColor = Colors.Transparent, WidthRequest = 44, HeightRequest = 36, Padding = 0 };
         SemanticProperties.SetDescription(menu, "Conversation options");
-        menu.Clicked += async (_, _) => { if (!busy && !recording.HasTurn) await ShowSettingsAsync(); };
+        menu.Clicked += async (_, _) => { if (!busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
+        newConversation.Clicked += async (_, _) => await StartNewConversationAsync();
+        SemanticProperties.SetDescription(newConversation, "Start a new conversation");
         var header = new Grid
         {
             Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 10, RowSpacing = 2, BackgroundColor = Colors.White,
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) },
             RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }
         };
-        var back = new Button { Text = "‹", FontSize = 35, WidthRequest = 32, HeightRequest = 40, Padding = 0, BackgroundColor = Colors.Transparent, TextColor = Blue };
-        SemanticProperties.SetDescription(back, "Back to Chats");
-        back.Clicked += async (_, _) => await BackToChatsAsync();
+        SemanticProperties.SetDescription(chatBack, "Show saved conversations");
+        chatBack.Clicked += async (_, _) => await BackToChatsAsync();
         var heading = new Grid { ColumnSpacing = 5, ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
-        heading.Add(back, 0, 0);
+        heading.Add(chatBack, 0, 0);
         heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
         header.Add(heading, 0, 0);
         menu.HorizontalOptions = LayoutOptions.End;
-        header.Add(menu, 1, 0);
+        header.Add(newConversation, 1, 0);
+        header.Add(menu, 2, 0);
         header.Add(account, 0, 1);
         header.Add(modelPicker, 1, 1);
+        Grid.SetColumnSpan(modelPicker, 2);
+        modelPicker.HorizontalOptions = LayoutOptions.End;
         SemanticProperties.SetDescription(modelPicker, "ChatGPT model");
         modelPicker.SelectedIndexChanged += (_, _) =>
         {
@@ -144,6 +153,8 @@ public sealed class MainPage : ContentPage
             } },
             ItemTemplate = new ConversationTemplateSelector(new DataTemplate(() => CreateBubble(ConversationTurnKind.Translation)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiQuestion)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiAnswer)))
         };
+        conversationList = new ConversationListView(conversationStore, OpenConversationInlineAsync);
+        var conversationArea = new Grid { Children = { messages, conversationList } };
         var languages = new Grid
         {
             ColumnSpacing = 6,
@@ -172,7 +183,7 @@ public sealed class MainPage : ContentPage
         turnControls.Add(new Grid { WidthRequest = 94, HeightRequest = 94, Children = { shutterRing, progress } }, 0, 0);
         turnControls.Add(send, 1, 0);
         cancel.HorizontalOptions = LayoutOptions.Center;
-        var composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, attachmentCard, inputBorder, turnCaption, turnControls, cancel, status } };
+        composer = new VerticalStackLayout { Padding = new Thickness(16, 10, 16, 14), Spacing = 10, BackgroundColor = Color.FromArgb("#E8F2F9"), Children = { languages, attachmentCard, inputBorder, turnCaption, turnControls, cancel, status } };
         liveTranslation.SetBinding(Label.FontSizeProperty, new Binding(nameof(MessageFontSize), source: this));
         livePreview = new Border
         {
@@ -185,7 +196,7 @@ public sealed class MainPage : ContentPage
             } }
         };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) } };
-        root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(messages, 0, 2); root.Add(livePreview, 0, 3); root.Add(composer, 0, 4);
+        root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(conversationArea, 0, 2); root.Add(livePreview, 0, 3); root.Add(composer, 0, 4);
         root.SizeChanged += (_, _) => ScrollToLatest();
         Content = root;
         SemanticProperties.SetDescription(send, "Send message, translate and switch speakers");
@@ -208,6 +219,8 @@ public sealed class MainPage : ContentPage
         draft.TextChanged += (_, _) => { if (!syncingDraft) recording.Edit(draft.Text ?? ""); UpdateControls(); };
         draft.Focused += async (_, _) =>
         {
+            if (leavingConversation) return;
+            ShowConversationArea();
             if (busy || !recording.IsRecording) return;
             pausingForEdit = true;
             try { await TogglePauseAsync(); }
@@ -343,21 +356,55 @@ public sealed class MainPage : ContentPage
     async Task BackToChatsAsync()
     {
         if (leavingConversation || busy) return;
-        leavingConversation = true;
+        leavingConversation = true; UpdateControls();
         try
         {
             draft.Unfocus();
             if (recording.IsRecording) await recording.PauseAsync();
             playback.Stop();
             await FlushConversationAsync();
-            await Navigation.PopAsync();
+            ApplyConversation(null);
+            showingConversations = true;
+            UpdateControls();
+            await conversationList.RefreshAsync();
         }
         catch { await DisplayAlertAsync("Could not save conversation", "Please check the available storage and try again. Your chat is still open.", "OK"); }
-        finally { leavingConversation = false; }
+        finally { leavingConversation = false; UpdateControls(); }
+    }
+
+    void ShowConversationArea()
+    {
+        if (!showingConversations) return;
+        showingConversations = false;
+        UpdateControls(); ScrollToLatest();
+    }
+
+    async Task StartNewConversationAsync()
+    {
+        if (leavingConversation || busy) return;
+        leavingConversation = true; UpdateControls();
+        try
+        {
+            draft.Unfocus();
+            if (recording.IsRecording) await recording.PauseAsync();
+            await PrepareNewConversationAsync();
+            ShowConversationArea();
+        }
+        catch { await DisplayAlertAsync("Could not start a new conversation", "Your current chat has been kept. Please try again.", "OK"); }
+        finally { leavingConversation = false; UpdateControls(); }
+    }
+
+    async Task OpenConversationInlineAsync(Guid id)
+    {
+        if (leavingConversation || busy) return;
+        leavingConversation = true; UpdateControls();
+        try { await OpenConversationAsync(id); ShowConversationArea(); }
+        finally { leavingConversation = false; UpdateControls(); }
     }
 
     protected override bool OnBackButtonPressed()
     {
+        if (showingConversations) return base.OnBackButtonPressed();
         _ = BackToChatsAsync();
         return true;
     }
@@ -597,11 +644,11 @@ public sealed class MainPage : ContentPage
     void ScrollToLatest()
     {
         var revision = ++scrollRevision;
-        if (turns.Count == 0) return;
+        if (showingConversations || turns.Count == 0) return;
         // Collection changes arrive before iOS has measured the new cell. Scroll after layout.
         Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(120), () =>
         {
-            if (revision != scrollRevision || !pageVisible || turns.Count == 0 || messages.Handler is null) return;
+            if (revision != scrollRevision || !pageVisible || showingConversations || turns.Count == 0 || messages.Handler is null) return;
             messages.ScrollTo(turns.Count - 1, position: ScrollToPosition.End, animate: false);
         });
     }
@@ -610,6 +657,11 @@ public sealed class MainPage : ContentPage
     {
         base.OnAppearing(); pageVisible = true;
         await LoadAccountAsync();
+        if (!initializedConversations)
+        {
+            initializedConversations = true;
+            await conversationList.RefreshAsync();
+        }
         UpdateControls();
         await RefreshModelsAsync();
     }
@@ -695,6 +747,7 @@ public sealed class MainPage : ContentPage
         attachmentPreview.Source = image is null ? null : ImageSource.FromStream(() => new MemoryStream(image.Bytes, writable: false));
         attachmentName.Text = image?.Name;
         attachmentCard.IsVisible = image is not null;
+        if (image is not null && !restoringConversation) ShowConversationArea();
         UpdateControls();
         MarkConversationChanged();
     }
@@ -817,6 +870,7 @@ public sealed class MainPage : ContentPage
     async Task TogglePauseAsync()
     {
         if (busy || !auth.IsConnected) return;
+        ShowConversationArea();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
@@ -990,6 +1044,12 @@ public sealed class MainPage : ContentPage
 
     void UpdateControls()
     {
+        messages.IsVisible = !showingConversations;
+        conversationList.IsVisible = showingConversations;
+        conversationList.IsEnabled = !busy && !leavingConversation;
+        chatBack.IsVisible = !showingConversations;
+        chatBack.IsEnabled = newConversation.IsEnabled = !busy && !leavingConversation;
+        composer.IsEnabled = !leavingConversation;
         draft.Placeholder = mode.IsAi ? "Ask AI …" : "Type a message …";
         welcomeHint.Text = mode.IsAi ? "Ask AI in either selected language.\nLanguage is detected automatically.\nReplies appear in both languages." : "Microphone: record, pause and resume.\nSend with ↑ to translate and switch speakers.";
         attachmentHint.Text = mode.IsAi ? "Ask AI about this image" : "Translate image text + your message";
