@@ -3,6 +3,7 @@
 These illustrations explain the current layout in `MainPage.cs`,
 `ConversationListView.cs` and `SettingsPage.cs`, including the square-and-pencil
 new-chat icon, grouped header controls and the relocated OpenAI voice setup.
+The title is centered using equal reserved side slots in both list and chat views.
 They are **not screenshots captured from the running application or an iPhone**.
 The native app window could not be opened in the current desktop session
 (`GetCursorPos failed: Access is denied`).

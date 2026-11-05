@@ -119,10 +119,14 @@ public sealed class MainPage : ContentPage
         };
         SemanticProperties.SetDescription(chatBack, "Show saved conversations");
         chatBack.Clicked += async (_, _) => await BackToChatsAsync();
-        var heading = new Grid { ColumnSpacing = 8, ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
+        // Equal fixed side slots keep the title centered when the back button is hidden.
+        var heading = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(98), new(GridLength.Star), new(98) } };
+        chatBack.HorizontalOptions = LayoutOptions.Start;
+        chatBack.VerticalOptions = LayoutOptions.Center;
         heading.Add(chatBack, 0, 0);
-        heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, VerticalTextAlignment = TextAlignment.Center }, 1, 0);
+        heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, MaxLines = 1 }, 1, 0);
         header.Add(heading, 0, 0);
+        Grid.SetColumnSpan(heading, 2);
         var actions = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(48), new(48) } };
         actions.Add(newConversation, 0, 0); actions.Add(menu, 1, 0);
         var actionPill = new Border
@@ -132,7 +136,7 @@ public sealed class MainPage : ContentPage
             Stroke = Color.FromArgb("#DCE8F0"), StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 23 }
         };
-        header.Add(actionPill, 1, 0);
+        heading.Add(actionPill, 2, 0);
         header.Add(account, 0, 1);
         header.Add(modelPicker, 1, 1);
         modelPicker.HorizontalOptions = LayoutOptions.End;
