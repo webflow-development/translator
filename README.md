@@ -120,6 +120,28 @@ Die iOS-App wird auf einem Mac kompiliert. Ein Windows-PC oder eine Windows-VM g
 
 ## Codemagic
 
+**Koe iOS TestFlight** starts automatically on pushes to `main` when the app,
+tests, build scripts, SDK configuration or `codemagic.yaml` change. A GitHub push
+webhook must be connected to this Codemagic application. In Codemagic, open the
+application's **Webhooks** tab to check recent deliveries or update the webhook.
+If it is missing, configure a GitHub repository webhook with the Codemagic app's
+payload URL (`https://api.codemagic.io/hooks/<appId>`) and the **Pushes** event.
+The app ID is visible in the application's Codemagic URL. The existing Apple
+integration and TestFlight publishing remain in use; no Codemagic API token is
+needed for webhook-triggered builds.
+
+The `changeset` filter watches `Koe-Maui/**`, `tests/**`, `scripts/**`,
+`global.json` and `codemagic.yaml`. Documentation, store artwork and the legacy
+Swift prototype do not require a full iOS build. Codemagic can initially queue a
+build and skip it after fetching sources; its first build after enabling this
+filter runs regardless of changed paths, and changes to `codemagic.yaml` always
+qualify. The unsigned compile-check workflow remains manual. Existing running
+builds are not configured to be automatically cancelled.
+
+Configuration references:
+- https://docs.codemagic.io/yaml-running-builds/starting-builds-automatically/
+- https://docs.codemagic.io/yaml-running-builds/webhooks/
+
 Die Konfiguration erwartet SDK 10.0.402, Workload-Set 10.0.402.1 und Xcode 27.1. Diese Versionen gehören zusammen; nicht unabhängig auf `latest` umstellen.
 
 1. Änderungen ins verbundene GitHub-Repo übernehmen.

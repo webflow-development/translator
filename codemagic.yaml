@@ -3,6 +3,21 @@ workflows:
     name: Koe iOS TestFlight
     max_build_duration: 90
     instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    when:
+      changeset:
+        includes:
+          - 'Koe-Maui/**'
+          - 'tests/**'
+          - 'scripts/**'
+          - 'global.json'
+          - 'codemagic.yaml'
     integrations:
       app_store_connect: webflow
     environment:
