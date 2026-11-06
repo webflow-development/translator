@@ -113,21 +113,18 @@ public sealed class MainPage : ContentPage
         menu.Clicked += async (_, _) => { if (!busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
         newConversation.Clicked += async (_, _) => await StartNewConversationAsync();
         SemanticProperties.SetDescription(newConversation, "Start a new conversation");
-        var header = new VerticalStackLayout
+        var header = new Grid
         {
-            Padding = new Thickness(18, 6, 18, 8), Spacing = 2, BackgroundColor = Colors.White
+            Padding = new Thickness(18, 6, 18, 8), ColumnSpacing = 0, BackgroundColor = Colors.White,
+            ColumnDefinitions = { new(44), new(GridLength.Star), new(44) }
         };
         SemanticProperties.SetDescription(chatBack, "Show saved conversations");
         chatBack.Clicked += async (_, _) => await BackToChatsAsync();
-        // The title has its own centered row; chat navigation stays in the row below.
-        var heading = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(44), new(GridLength.Star), new(44) } };
-        heading.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, MaxLines = 1 }, 1, 0);
-        heading.Add(menu, 2, 0);
-        header.Children.Add(heading);
-        var navigation = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(44), new(GridLength.Star), new(44) } };
-        navigation.Add(chatBack, 0, 0);
-        navigation.Add(newConversation, 0, 0);
-        header.Children.Add(navigation);
+        // Equal side slots keep the title centered as the left button changes.
+        header.Add(chatBack, 0, 0);
+        header.Add(newConversation, 0, 0);
+        header.Add(new Label { Text = "Koe", FontSize = 23, FontAttributes = FontAttributes.Bold, TextColor = Ink, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, MaxLines = 1 }, 1, 0);
+        header.Add(menu, 2, 0);
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
