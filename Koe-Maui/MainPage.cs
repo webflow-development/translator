@@ -126,7 +126,7 @@ public sealed class MainPage : ContentPage
         header.Children.Add(heading);
         var navigation = new Grid { ColumnSpacing = 0, ColumnDefinitions = { new(44), new(GridLength.Star), new(44) } };
         navigation.Add(chatBack, 0, 0);
-        navigation.Add(newConversation, 2, 0);
+        navigation.Add(newConversation, 0, 0);
         header.Children.Add(navigation);
         signInCard = new Border
         {
@@ -1090,6 +1090,7 @@ public sealed class MainPage : ContentPage
         conversationList.IsVisible = showingConversations;
         conversationList.IsEnabled = !busy && !leavingConversation;
         chatBack.IsVisible = !showingConversations;
+        newConversation.IsVisible = showingConversations;
         chatBack.IsEnabled = newConversation.IsEnabled = !busy && !leavingConversation;
         composer.IsEnabled = !leavingConversation;
         draft.Placeholder = mode.IsAi ? "Ask AI …" : "Type a message …";

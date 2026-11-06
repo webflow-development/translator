@@ -3,8 +3,9 @@
 These illustrations explain the current layout in `MainPage.cs`,
 `ConversationListView.cs` and `SettingsPage.cs`, including the square-and-pencil
 new-chat icon, two-row header and the relocated OpenAI voice setup.
-The title is centered in its own top row, with Settings on the right. The back
-and new-chat buttons sit in the row below. Connection status and model selection
+The title is centered in its own top row, with Settings on the right. The row
+below has one shared left-hand slot: new chat in the list, back in a conversation.
+Connection status and model selection
 are in the first ChatGPT Settings group.
 They are **not screenshots captured from the running application or an iPhone**.
 The native app window could not be opened in the current desktop session
