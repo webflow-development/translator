@@ -10,9 +10,8 @@ no working test credentials were supplied.
 - In the existing source, both controls were disabled while ChatGPT was disconnected.
   This explains the same symptom on a fresh installation and is a likely connection
   between the two reported issues. It is not proof of what happened on Apple's device.
-- A build with the guest service enabled lets reviewers record, translate, and use AI
-  chat before signing in. A build without the service still explains how to sign in.
-  Both retain the draft and photo when offering sign-in.
+- Reviewers can record and edit a draft before signing in. A signed-out send explains
+  how to connect an eligible ChatGPT plan and keeps the draft and photo.
 - The app currently declares iPhone device family 1. iPhone compatibility on iPad
   still needs testing; the declaration is not a reason to dismiss Apple's iPad finding.
 
@@ -21,28 +20,24 @@ no working test credentials were supplied.
 Apple requires working access for the full feature set. The previous instruction
 to use the reviewer's own ChatGPT account has not satisfied this review.
 
-Deploy and configure the guest service as described in the [repository README](../README.md#enable-guest-mode-for-a-build).
-The guest path handles real translations, photos, bilingual AI and web search. On-device
-speech playback and saved chats remain accessible. The custom model picker requires
-a connected ChatGPT plan. Optional OpenAI voice uses the reviewer's own API key.
-Describe these differences and make sure App Review has a way to evaluate any feature
-it asks to verify. Guest access has a shared service allowance. Check its availability
-for the review before submitting.
+The web button opens ChatGPT's public website. It gives reviewers the same web
+experience available in their location. In-app translations, photo processing,
+bilingual AI and model selection require an eligible connected ChatGPT plan. Optional
+OpenAI voice uses a personal API key. Arrange working access for the in-app features
+with App Review before resubmitting.
 
 ## Device verification before selecting the replacement build
 
 Record the actual device, OS and replacement build number for each completed test.
 The Windows build and iOS reference-API compilation do not replace these checks.
 
-1. Install the configured build fresh. As a guest, verify that the microphone starts
-   and that the first send asks for permission to share content with OpenAI. Declining
-   keeps the draft and photo. Confirm an accepted send returns a real translation.
-2. Check the remaining allowance in Settings. With an exhausted test allowance, verify
-   the prompt to sign in and that the draft stays editable. Test choosing a model after
-   signing in with an eligible account and signing back out to guest mode.
-3. As a guest, request microphone/speech permissions, record, pause, resume and send.
-   Confirm a real translation and the speaker switch. Deny permissions separately
-   and verify that the app shows an explanation and remains usable for typed input.
+1. On a fresh install, verify that **Try ChatGPT on the web** opens the official
+   website and returning to Koe keeps the current conversation and its draft.
+2. While signed out, grant microphone and speech permissions and record, pause and
+   resume. Send and dismiss the sign-in prompt. Verify the text and photo are still
+   editable. Deny permissions separately and verify that typed input remains usable.
+3. Sign in with an eligible plan, choose a model and send the draft. Verify the
+   first-send permission prompt, a real translation and the speaker switch.
 4. Test typed text, a photo/camera image, an AI question in both languages, a web-search
    request, copy, speech playback, saved chats, a new chat and reopening/deleting a chat.
 5. Test sign-in cancellation, failed sign-in, network loss, retry and sign-out. A kept

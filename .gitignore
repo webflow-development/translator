@@ -4,7 +4,6 @@
 .vscode/.ropeproject/
 .dotnet/
 artifacts/
-**/guest-data/
 *.user
 *.p8
 *.p12

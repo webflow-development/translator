@@ -4,15 +4,13 @@ using System.Text.Json;
 
 namespace Koe.Services;
 
-public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth, GuestClient guest)
+public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth)
 {
     readonly ModelSelectionCache models = new();
 
     public async Task<TranslationResult> TranslateAsync(string text, ConversationLanguage source, ConversationLanguage target, CancellationToken ct, ImageAttachment? image = null, Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true, string? modelId = null)
     {
-        using var response = auth.IsConnected
-            ? await SendWithChatGptAsync(model => TranslationRequest.Build(model, text, source, target, image, includeTransliteration), modelId, ct)
-            : await guest.TranslateAsync(text, source, target, image, includeTransliteration, ct);
+        using var response = await SendWithChatGptAsync(model => TranslationRequest.Build(model, text, source, target, image, includeTransliteration), modelId, ct);
         var json = await ReadCompletionAsync(response, ct, onPreview);
         return TranslationResult.Parse(json.Text, image is not null, !string.IsNullOrWhiteSpace(text), includeTransliteration, source, target);
     }
@@ -21,9 +19,7 @@ public sealed class OpenAiTranslator(HttpClient http, ChatGptAuth auth, GuestCli
         IEnumerable<AiContextMessage> history, CancellationToken ct, ImageAttachment? image = null,
         Action<TranslationPreview>? onPreview = null, bool includeTransliteration = true, string? modelId = null, Action? onSearching = null)
     {
-        using var response = auth.IsConnected
-            ? await SendWithChatGptAsync(model => AiChatRequest.Build(model, question, first, second, history, image, includeTransliteration), modelId, ct, usesWebSearch: true)
-            : await guest.AskAsync(question, first, second, history, image, includeTransliteration, ct);
+        using var response = await SendWithChatGptAsync(model => AiChatRequest.Build(model, question, first, second, history, image, includeTransliteration), modelId, ct, usesWebSearch: true);
         var result = await ReadCompletionAsync(response, ct, onPreview, "first_answer", "second_answer", onSearching);
         var reply = AiReply.Parse(result.Text, includeTransliteration, first, second);
         return reply with

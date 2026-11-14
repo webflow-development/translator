@@ -16,23 +16,17 @@ The compact header uses one row: the left-hand slot shows the square-and-pencil 
 
 Validation covers restart recovery, Unicode, photos, drafts, independent chats/languages, AI source metadata, sorting, deletion, queued saves, corrupt/partial manifests and future-format preservation. Native iPhone layouts, keyboard behavior, background/resume and left-swipe deletion still require a TestFlight check. No updated App Store screenshots have been created for these UI changes yet.
 
-## Guest mode and ChatGPT sign-in
+## ChatGPT on the web and in Koe
 
-With a configured guest service, a fresh installation can record, translate text and photos, and use bilingual AI chat with web search before signing in. Koe asks for permission before sending any content to OpenAI. Settings show the current guest allowance and a sign-in action for model selection. At the limit, the sign-in prompt keeps the draft and photo. A connected account uses its own eligible ChatGPT plan and model selection. Signing out returns to guest mode. Builds without a guest service show the sign-in guidance on microphone and send taps.
+**Try ChatGPT on the web** opens the official ChatGPT site. ChatGPT controls guest availability in that browser session. Text, photos and saved conversations stay in Koe when the site opens.
 
-### Enable guest mode for a build
+In Koe, iPhone dictation and draft editing are available before sign-in. Sending for translation or an AI reply requires connecting an eligible ChatGPT plan. A signed-out send keeps the draft and any attached photo so the user can send them after connecting. The model picker is in Settings. Koe asks for permission before sending content to OpenAI.
 
-1. Run `dotnet publish Koe.GuestServer/Koe.GuestServer.csproj -c Release -o artifacts/koe-guest` from the repository root. Deploy the output to a host with the ASP.NET Core 10 runtime and start it with `dotnet Koe.GuestServer.dll`. Use one instance with a persistent writable directory and expose it over HTTPS. The proxy must pass streaming responses through and accept request bodies of up to 24 MiB. `GET /health` checks that the service is running.
-2. Set `OPENAI_API_KEY` in the host's secret store and set `Guest__DataDirectory` to the persistent directory. Behind a proxy, set `Guest__TrustedProxyIp` to the immediate proxy's IP if it supplies the original client IP. If omitted, the service counts the direct peer's address.
-3. Build the app with the service's public HTTPS base URL as `KOE_GUEST_API_URL` in the build environment or as `-p:KoeGuestApiUrl=https://your-host.example/`. For Codemagic, import the environment group containing the URL in the workflow. The app receives only the base URL.
-
-The service defaults to `gpt-6-luna`, 20 requests per installation per UTC day, 80 per network address per UTC day, and service-wide limits of 200 per UTC day, 2,000 per UTC month and four concurrent upstream requests. Override these with `Guest__Model`, `Guest__RequestsPerGuestPerDay`, `Guest__RequestsPerNetworkPerDay`, `Guest__RequestsPerDay`, `Guest__RequestsPerMonth` and `Guest__ConcurrentRequests`. These count requests, and OpenAI bills the project's API usage. An accepted attempt can consume a request even if the connection drops. The service stores quota counters with hashed installation IDs and network addresses. Conversation data is forwarded to OpenAI and is not written to the quota store.
-
-Run `dotnet run --project tests/Koe.GuestChecks/Koe.GuestChecks.csproj -c Release` to exercise the service with simulated upstream responses. Update the published privacy information for the configured guest service and follow the [App Review device-test notes](store-assets/APP_REVIEW_ACCESS.md) on a release build with the live service before resubmitting.
+Optional OpenAI voice uses the user's own OpenAI API key and the API project's billing. The app connects directly to OpenAI for both the connected ChatGPT plan and optional OpenAI voice. See the [App Review access and device-test notes](store-assets/APP_REVIEW_ACCESS.md) before resubmitting.
 
 ## Automatic web search in AI mode
 
-AI requests include the hosted `web_search` tool and `tool_choice: auto`. The model is instructed to search for current facts, prices, opening hours, local recommendations, source links and explicit verification, while ordinary conversation can answer directly. The device date helps interpret relative dates. Translation requests omit the search tool. Connected users use the selected model and their ChatGPT OAuth token. Guests use the server's model with at most one web search tool call per response. Both paths use the bilingual JSON schema, language detection, history, transliteration, `store: false` and `stream: true`.
+AI requests include the hosted `web_search` tool and `tool_choice: auto`. The model is instructed to search for current facts, prices, opening hours, local recommendations, source links and explicit verification, while ordinary conversation can answer directly. The device date helps interpret relative dates. Translation requests omit the search tool. Koe sends requests with the selected model and the connected ChatGPT plan's OAuth token. Bilingual AI replies use the JSON schema, language detection, history, transliteration, `store: false` and `stream: true`.
 
 The app shows “Searching the web …” from search-progress events, and marks an answer “AI · Web search” only after a completed search call is reported. Citation URLs and titles come from `url_citation` metadata in the completed response, not from URLs invented inside generated JSON. Sources are deduplicated and limited to absolute HTTP(S) links without embedded credentials. Both answer labels contain clickable numbered source spans, with matching titles below the bilingual answer; opening a source requires a user tap. Copy and speech playback use the answer text without the app’s source buttons or opaque tool citation markers. Previous source links are included as reference data in bounded AI follow-up context. A searched answer with no citation metadata states that source links were not returned.
 
@@ -99,11 +93,9 @@ Gesprächsübersetzer für Deutsch und Japanisch, jetzt in C# mit .NET MAUI 10.
 ## Projektstruktur
 
 - `Koe-Maui/`: aktive iPhone-App und Windows-Version für die Entwicklung.
-- `Koe.GuestServer/`: API für den Gastmodus mit serverseitigem OpenAI-Schlüssel und Kontingenten.
 - `Koe-iOS/`: bisheriger SwiftUI-Prototyp als unveränderte Referenz; wird vom Root-Workflow nicht mehr gebaut.
 - `codemagic.yaml`: Cloud-Builds für die neue .NET-Version.
 - `tests/Koe.CoreChecks/`: ausführbare Tests für Streaming, ID-Token-Verifikation, Umschrift-Antworten und Aufnahme-/Pausenzustände, ohne Apple-Konto oder API-Aufrufe.
-- `tests/Koe.GuestChecks/`: Integrationstests für den Gastdienst mit simulierten OpenAI-Antworten.
 
 ## Funktionen
 
@@ -146,7 +138,7 @@ The app ID is visible in the application's Codemagic URL. The existing Apple
 integration and TestFlight publishing remain in use; no Codemagic API token is
 needed for webhook-triggered builds.
 
-The `changeset` filter watches `Koe-Maui/**`, `Koe.GuestServer/**`, `tests/**`, `scripts/**`,
+The `changeset` filter watches `Koe-Maui/**`, `tests/**`, `scripts/**`,
 `global.json` and `codemagic.yaml`. Documentation, store artwork and the legacy
 Swift prototype do not require a full iOS build. Codemagic can initially queue a
 build and skip it after fetching sources; its first build after enabling this

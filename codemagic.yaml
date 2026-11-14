@@ -14,7 +14,6 @@ workflows:
       changeset:
         includes:
           - 'Koe-Maui/**'
-          - 'Koe.GuestServer/**'
           - 'tests/**'
           - 'scripts/**'
           - 'global.json'
@@ -39,7 +38,6 @@ workflows:
         script: |
           set -euo pipefail
           dotnet run --project tests/Koe.CoreChecks/Koe.CoreChecks.csproj --configuration Release
-          dotnet run --project tests/Koe.GuestChecks/Koe.GuestChecks.csproj --configuration Release
       - name: Select signing profile and build IPA
         script: |
           set -euo pipefail
@@ -81,7 +79,6 @@ workflows:
           export DOTNET_ROOT="$CM_BUILD_DIR/.dotnet"
           dotnet workload install maui-ios --version 10.0.402.1
           dotnet run --project tests/Koe.CoreChecks/Koe.CoreChecks.csproj -c Release
-          dotnet run --project tests/Koe.GuestChecks/Koe.GuestChecks.csproj -c Release
           mkdir -p artifacts
           dotnet build Koe-Maui/Koe.csproj -f net10.0-ios -c Debug \
             -p:RuntimeIdentifier=iossimulator-arm64 -p:EnableCodeSigning=false \
