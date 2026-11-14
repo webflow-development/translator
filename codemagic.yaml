@@ -22,6 +22,9 @@ workflows:
       app_store_connect: webflow
     environment:
       xcode: 27.1
+      vars:
+        # Pass Koe's App Store Connect record ID to altool for the upload.
+        APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS: '--apple-id 6826183880'
       ios_signing:
         distribution_type: app_store
         bundle_identifier: ch.paulo.koe
