@@ -205,30 +205,11 @@ public sealed class SettingsPage : ContentPage
         body.Children.Add(SettingsStyle.Group(
             Action("↗", "Manage usage", () => Browser.Default.OpenAsync("https://chatgpt.com/settings/usage")),
             Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · API key and billing setup"),
-            Action("●", owner.IsAccountConnected ? "Sign out" : "Continue with ChatGPT", ConnectAccountAsync,
-                owner.IsAccountConnected ? owner.AccountName : "Connect to translate and ask AI")));
-
-        Section("Privacy");
-        var sharing = new Switch { IsToggled = owner.AiSharingAllowed, OnColor = Color.FromArgb("#34C759"), VerticalOptions = LayoutOptions.Center };
-        SemanticProperties.SetDescription(sharing, "Allow Koe to share messages with OpenAI");
-        sharing.Toggled += async (_, change) =>
-        {
-            if (change.Value && !owner.AiSharingAllowed &&
-                !await DisplayAlertAsync("Share with OpenAI", MainPage.AiSharingExplanation, "Allow", "Not now"))
+            Action("●", owner.IsAccountConnected ? "Sign out" : "Connect ChatGPT", async () =>
             {
-                sharing.IsToggled = false;
-                return;
-            }
-            owner.SetAiSharing(change.Value);
-        };
-        body.Children.Add(SettingsStyle.Group(Row("↗", "Share with OpenAI", sharing)));
-        Note(MainPage.AiSharingExplanation);
+                await Navigation.PopModalAsync();
+                await owner.ConnectAsync();
+            }, owner.IsAccountConnected ? owner.AccountName : "Connect to translate and ask AI")));
         Note("Conversations and their photos are saved on this device. Swipe left on a chat in Chats to delete it.");
-    }
-
-    async Task ConnectAccountAsync()
-    {
-        await Navigation.PopModalAsync();
-        await owner.ConnectAsync();
     }
 }

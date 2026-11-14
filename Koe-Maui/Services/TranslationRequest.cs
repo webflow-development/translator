@@ -4,8 +4,7 @@ namespace Koe.Services;
 
 public static class TranslationRequest
 {
-    public static byte[] Build(string model, string text, ConversationLanguage source, ConversationLanguage target, ImageAttachment? image = null,
-        bool includeTransliteration = true)
+    public static byte[] Build(string model, string text, ConversationLanguage source, ConversationLanguage target, ImageAttachment? image = null, bool includeTransliteration = true)
     {
         if (source.Code == target.Code) throw new InvalidOperationException("Choose two different languages.");
         if (string.IsNullOrWhiteSpace(text) && image is null) throw new InvalidOperationException("Please enter text or choose an image.");

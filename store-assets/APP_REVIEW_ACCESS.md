@@ -10,34 +10,48 @@ no working test credentials were supplied.
 - In the existing source, both controls were disabled while ChatGPT was disconnected.
   This explains the same symptom on a fresh installation and is a likely connection
   between the two reported issues. It is not proof of what happened on Apple's device.
-- Reviewers can record and edit a draft before signing in. A signed-out send explains
-  how to connect an eligible ChatGPT plan and keeps the draft and photo.
+- The updated source makes these buttons open a sign-in explanation when disconnected.
+  It keeps the editable draft/photo, does not automatically record or send after sign-in,
+  and shows authentication failures in the sign-in card.
+- Translation and AI still require real ChatGPT authorization. This change alone does
+  not meet Apple's request for review access and is not a completed review fix.
 - The app currently declares iPhone device family 1. iPhone compatibility on iPad
   still needs testing; the declaration is not a reason to dismiss Apple's iPad finding.
+- No new test credentials, shared API key, demo service or paid backend has been created.
+  No message has been sent to Apple.
 
 ## Access arrangement to resolve before resubmitting
 
 Apple requires working access for the full feature set. The previous instruction
 to use the reviewer's own ChatGPT account has not satisfied this review.
 
-The web button opens ChatGPT's public website. It gives reviewers the same web
-experience available in their location. In-app translations, photo processing,
-bilingual AI and model selection require an eligible connected ChatGPT plan. Optional
-OpenAI voice uses a personal API key. Arrange working access for the in-app features
-with App Review before resubmitting.
+A possible next implementation is a disclosed, fully functional demonstration
+mode with dedicated test access to a secured API-backed service. The service would
+keep its provider credentials on the server; no developer API key would be bundled
+in the app. It must support actual test input, translation, photos, bilingual AI,
+web search where supported, chat persistence and the relevant speech-output paths.
+Fixed canned replies or a demonstration video would not establish those behaviors.
+
+That is a separate integration requiring the owner's decision on API costs,
+hosting, credentials and access limits. It is a proposal, not a feature of the
+current build. Any review-access differences must be explained to Apple. If a
+different account arrangement is chosen, confirm with App Review that it provides
+the required access; do not assume a shared personal ChatGPT account is suitable.
 
 ## Device verification before selecting the replacement build
 
 Record the actual device, OS and replacement build number for each completed test.
 The Windows build and iOS reference-API compilation do not replace these checks.
 
-1. On a fresh install, verify that **Try ChatGPT on the web** opens the official
-   website and returning to Koe keeps the current conversation and its draft.
-2. While signed out, grant microphone and speech permissions and record, pause and
-   resume. Send and dismiss the sign-in prompt. Verify the text and photo are still
-   editable. Deny permissions separately and verify that typed input remains usable.
-3. Sign in with an eligible plan, choose a model and send the draft. Verify the
-   first-send permission prompt, a real translation and the speaker switch.
+1. Fresh install, disconnected: the sign-in card and composer explain the requirement.
+   Both microphone and send taps open the sign-in dialog. "Not now" leaves text/photo
+   drafts intact. Rapid repeated taps do not open multiple dialogs.
+2. Complete sign-in through the supported route, or use the fully configured test
+   access once it exists. Record a real successful connection; do not mark this
+   complete based only on a displayed connected indicator.
+3. With access: request microphone/speech permissions, record, pause, resume and send.
+   Confirm a real translation and the speaker switch. Deny permissions separately
+   and verify that the app shows an explanation and remains usable for typed input.
 4. Test typed text, a photo/camera image, an AI question in both languages, a web-search
    request, copy, speech playback, saved chats, a new chat and reopening/deleting a chat.
 5. Test sign-in cancellation, failed sign-in, network loss, retry and sign-out. A kept
