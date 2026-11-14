@@ -12,11 +12,15 @@
     <ApplicationId>ch.paulo.koe</ApplicationId>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
+    <KoeGuestApiUrl Condition="'$(KoeGuestApiUrl)' == ''">$(KOE_GUEST_API_URL)</KoeGuestApiUrl>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">17.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
   </PropertyGroup>
+  <ItemGroup Condition="'$(KoeGuestApiUrl)' != ''">
+    <AssemblyMetadata Include="KoeGuestApiUrl" Value="$(KoeGuestApiUrl)" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
     <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#2458CC" />

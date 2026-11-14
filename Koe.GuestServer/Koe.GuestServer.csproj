@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Koe.GuestChecks" />
+    <Compile Include="../Koe-Maui/Services/GuestProtocol.cs" Link="Shared/GuestProtocol.cs" />
+    <Compile Include="../Koe-Maui/Services/ConversationLanguage.cs" Link="Shared/ConversationLanguage.cs" />
+    <Compile Include="../Koe-Maui/Services/ImageAttachment.cs" Link="Shared/ImageAttachment.cs" />
+    <Compile Include="../Koe-Maui/Services/TranslationRequest.cs" Link="Shared/TranslationRequest.cs" />
+    <Compile Include="../Koe-Maui/Services/TranslationResult.cs" Link="Shared/TranslationResult.cs" />
+    <Compile Include="../Koe-Maui/Services/AiChatRequest.cs" Link="Shared/AiChatRequest.cs" />
+    <Compile Include="../Koe-Maui/Services/AiReply.cs" Link="Shared/AiReply.cs" />
+    <Compile Include="../Koe-Maui/Services/WebCitation.cs" Link="Shared/WebCitation.cs" />
+  </ItemGroup>
+</Project>

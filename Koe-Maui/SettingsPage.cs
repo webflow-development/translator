@@ -139,7 +139,8 @@ public sealed class SettingsPage : ContentPage
         var connected = SettingsStyle.Label("● ChatGPT connected", 16);
         connected.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#28774E"), Color.FromArgb("#7AD5A3"));
         connected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
-        var disconnected = SettingsStyle.Label("○ ChatGPT not connected", 16, muted: true);
+        var disconnected = SettingsStyle.Label("", 16, muted: true);
+        disconnected.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.GuestStatus), source: owner));
         disconnected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountDisconnected), source: owner));
         var accountName = SettingsStyle.Label("", 13, muted: true);
         accountName.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.AccountName), source: owner));
@@ -164,10 +165,19 @@ public sealed class SettingsPage : ContentPage
             Padding = new Thickness(16, 8), Spacing = 0,
             Children = { SettingsStyle.Label("Model", 13, muted: true), modelPicker }
         };
-        body.Children.Add(SettingsStyle.Group(connection, modelRow));
+        if (owner.GuestModeAvailable && !owner.IsAccountConnected)
+        {
+            body.Children.Add(SettingsStyle.Group(connection, Action("AI", "Choose a model", async () =>
+            {
+                await ConnectAccountAsync();
+                if (owner.IsAccountConnected) await owner.ShowSettingsAsync();
+            }, owner.GuestModelLabel)));
+        }
+        else body.Children.Add(SettingsStyle.Group(connection, modelRow));
         var modelHint = SettingsStyle.Label("", 13, muted: true);
         modelHint.Margin = new Thickness(16, 0);
         modelHint.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.ModelChoiceHint), source: owner));
+        modelHint.IsVisible = owner.IsAccountConnected || !owner.GuestModeAvailable;
         body.Children.Add(modelHint);
 
         Section("Conversation languages");
@@ -205,11 +215,31 @@ public sealed class SettingsPage : ContentPage
         body.Children.Add(SettingsStyle.Group(
             Action("↗", "Manage usage", () => Browser.Default.OpenAsync("https://chatgpt.com/settings/usage")),
             Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · API key and billing setup"),
-            Action("●", owner.IsAccountConnected ? "Sign out" : "Connect ChatGPT", async () =>
+            Action("●", owner.IsAccountConnected ? "Sign out" : "Continue with ChatGPT", ConnectAccountAsync,
+                owner.IsAccountConnected ? owner.AccountName : owner.GuestModeAvailable ? "Use your ChatGPT plan and choose a model" : "Connect to translate and ask AI")));
+
+        Section("Privacy");
+        var sharing = new Switch { IsToggled = owner.AiSharingAllowed, OnColor = Color.FromArgb("#34C759"), VerticalOptions = LayoutOptions.Center };
+        SemanticProperties.SetDescription(sharing, "Allow Koe to share messages with OpenAI");
+        sharing.Toggled += async (_, change) =>
+        {
+            if (change.Value && !owner.AiSharingAllowed &&
+                !await DisplayAlertAsync("Share with OpenAI", MainPage.AiSharingExplanation, "Allow", "Not now"))
             {
-                await Navigation.PopModalAsync();
-                await owner.ConnectAsync();
-            }, owner.IsAccountConnected ? owner.AccountName : "Connect to translate and ask AI")));
+                sharing.IsToggled = false;
+                return;
+            }
+            owner.SetAiSharing(change.Value);
+            if (change.Value) await owner.RefreshModelsAsync();
+        };
+        body.Children.Add(SettingsStyle.Group(Row("↗", "Share with OpenAI", sharing)));
+        Note(MainPage.AiSharingExplanation);
         Note("Conversations and their photos are saved on this device. Swipe left on a chat in Chats to delete it.");
+    }
+
+    async Task ConnectAccountAsync()
+    {
+        await Navigation.PopModalAsync();
+        await owner.ConnectAsync();
     }
 }

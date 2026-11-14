@@ -1,3 +1,4 @@
+using System.Reflection;
 using Koe.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +11,18 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder().UseMauiApp<App>();
         builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromMinutes(3) });
         builder.Services.AddSingleton<ChatGptAuth>();
+        var guestUrl = typeof(MauiProgram).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "KoeGuestApiUrl")?.Value;
+#if DEBUG && WINDOWS
+        var guestAddress = GuestClient.ParseAddress(guestUrl, allowLoopback: true);
+#else
+        var guestAddress = GuestClient.ParseAddress(guestUrl);
+#endif
+        builder.Services.AddKeyedSingleton<HttpClient>("guest", (_, _) => new HttpClient(new HttpClientHandler
+        {
+            AllowAutoRedirect = false
+        }) { Timeout = TimeSpan.FromMinutes(3) });
+        builder.Services.AddSingleton(services => new GuestClient(services.GetRequiredKeyedService<HttpClient>("guest"), guestAddress, GuestInstallationId));
         builder.Services.AddSingleton<OpenAiTranslator>();
         builder.Services.AddSingleton<OpenAiSpeechClient>();
         builder.Services.AddSingleton<OpenAiVoiceSettings>();
@@ -31,5 +44,15 @@ public static class MauiProgram
 #endif
         builder.Services.AddSingleton<MainPage>();
         return builder.Build();
+    }
+
+    static Guid GuestInstallationId()
+    {
+        const string preference = "koe.guest-installation";
+        if (Guid.TryParseExact(Preferences.Default.Get(preference, ""), "N", out var saved) && saved != Guid.Empty)
+            return saved;
+        var id = Guid.NewGuid();
+        Preferences.Default.Set(preference, id.ToString("N"));
+        return id;
     }
 }

@@ -30,6 +30,7 @@ public sealed class MainPage : ContentPage
 {
     static readonly Color Ink = Color.FromArgb("#19384E"), Muted = Color.FromArgb("#638295"), Blue = Color.FromArgb("#568FBE");
     readonly ChatGptAuth auth;
+    readonly GuestClient guest;
     readonly OpenAiTranslator translator;
     readonly SpeechDraft recording;
     readonly SpeechOutput playback;
@@ -74,8 +75,14 @@ public sealed class MainPage : ContentPage
     bool pickingAttachment;
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
     const string SignInExplanation = "Sign in with ChatGPT to enable recording, translations and AI replies. No separate Koe account is needed.";
-    readonly Label signInExplanation = new() { Text = SignInExplanation, TextColor = Muted, FontSize = 13 };
+    const string GuestLimitExplanation = "Your guest requests are used up for today. Connect ChatGPT to keep going.";
+    public const string AiSharingExplanation = "Koe sends submitted text, speech transcripts, selected photos and recent chat context to OpenAI for translations and AI replies. Optional OpenAI voice sends the text you play to OpenAI. In guest mode the Koe server forwards requests and uses an installation ID and network address to count usage.";
+    const string AiSharingPreference = "koe.ai-sharing.v1";
+    readonly Label signInTitle = new() { TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold };
+    readonly Label signInExplanation = new() { TextColor = Muted, FontSize = 13 };
+    string? signInError;
     bool promptingForSignIn;
+    bool promptingForAiSharing;
     readonly Button send = new() { Text = "↑", FontSize = 30, WidthRequest = 56, HeightRequest = 56, CornerRadius = 28, Padding = 0, BackgroundColor = Blue, TextColor = Colors.White, VerticalOptions = LayoutOptions.Center };
     readonly Button shutter = new() { ImageSource = "microphone.png", FontSize = 28, WidthRequest = 78, HeightRequest = 78, CornerRadius = 39, Padding = 0, BackgroundColor = Color.FromArgb("#CF4F55"), TextColor = Colors.White };
     readonly Button cancel = new() { Text = "×  Discard input", FontSize = 14, BackgroundColor = Colors.Transparent, TextColor = Color.FromArgb("#B63E46"), IsVisible = false, MinimumHeightRequest = 44, Padding = new Thickness(12, 6) };
@@ -91,18 +98,20 @@ public sealed class MainPage : ContentPage
     readonly Border signInCard;
     readonly Border shutterRing;
     CancellationTokenSource? operation;
-    bool busy, pageVisible, syncingDraft, pausingForEdit, recognizingSpeech;
+    bool busy, pageVisible, syncingDraft, pausingForEdit, recognizingSpeech, loadingGuestUsage;
+    bool loadingAccount = true;
     bool discardingInput;
     readonly ConversationMode mode = new();
     ConversationLanguage first = ConversationLanguage.Get(Preferences.Default.Get("koe.language.first", "en"));
     ConversationLanguage second = ConversationLanguage.Get(Preferences.Default.Get("koe.language.second", "ja"));
     ConversationLanguage SourceLanguage => mode.FromFirst ? first : second;
     ConversationLanguage TargetLanguage => mode.FromFirst ? second : first;
+    bool CanUseAi => auth.IsConnected || guest.IsConfigured;
 
-    public MainPage(ChatGptAuth auth, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings, ConversationStore conversationStore)
+    public MainPage(ChatGptAuth auth, GuestClient guest, OpenAiTranslator translator, ISpeechCapture speech, SpeechOutput playback, OpenAiVoiceSettings voiceSettings, ConversationStore conversationStore)
     {
         if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
-        this.auth = auth; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings;
+        this.auth = auth; this.guest = guest; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings;
         this.conversationStore = conversationStore; recording = new SpeechDraft(speech);
         NavigationPage.SetHasNavigationBar(this, false);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
@@ -110,7 +119,7 @@ public sealed class MainPage : ContentPage
         SafeAreaEdges = Microsoft.Maui.SafeAreaEdges.All;
         var menu = new ImageButton { Source = "more.png", BackgroundColor = Color.FromArgb("#E8F2F9"), WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 10 };
         SemanticProperties.SetDescription(menu, "Settings");
-        menu.Clicked += async (_, _) => { if (!busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
+        menu.Clicked += async (_, _) => { if (!loadingAccount && !busy && !leavingConversation && !recording.HasTurn) await ShowSettingsAsync(); };
         newConversation.Clicked += async (_, _) => await StartNewConversationAsync();
         SemanticProperties.SetDescription(newConversation, "Start a new conversation");
         var header = new Grid
@@ -128,7 +137,7 @@ public sealed class MainPage : ContentPage
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "ChatGPT sign-in required", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, signInExplanation, connect } }
+            Content = new VerticalStackLayout { Spacing = 9, Children = { signInTitle, signInExplanation, connect } }
         };
         messages = new CollectionView
         {
@@ -229,7 +238,7 @@ public sealed class MainPage : ContentPage
     {
         try { await auth.LoadAsync(); }
         catch { SetStatus("Could not load your sign-in. Please reconnect."); }
-        UpdateControls();
+        finally { loadingAccount = false; UpdateControls(); }
     }
 
     ConversationSnapshot CaptureConversation() => new(conversationId, conversationCreatedAt, first.Code, second.Code,
@@ -588,6 +597,8 @@ public sealed class MainPage : ContentPage
         var revision = ++playbackRevision;
         try
         {
+            if (playback.UsesOpenAi && !await EnsureAiSharingAsync("Allow and play")) return;
+            if (revision != playbackRevision || !pageVisible || busy || recording.IsRecording) return;
             if (playback.UsesOpenAi) SetStatus("Preparing OpenAI voice … Tap the speaker again to stop.");
             var started = await playback.SpeakAsync(text, language.Code, Preferences.Default.Get("koe.voice." + language.Code, ""));
             if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording)
@@ -660,6 +671,7 @@ public sealed class MainPage : ContentPage
         {
             availableModels = [];
             NotifyModelChoices();
+            await RefreshGuestUsageAsync();
             return;
         }
         if (loadingModels) return;
@@ -682,6 +694,19 @@ public sealed class MainPage : ContentPage
             loadingModels = false; UpdateControls(); NotifyModelChoices();
             if (auth.IsConnected && auth.ConnectionKey != connection) await RefreshModelsAsync();
         }
+    }
+
+    async Task RefreshGuestUsageAsync()
+    {
+        if (!guest.IsConfigured || !AiSharingAllowed || loadingGuestUsage) return;
+        loadingGuestUsage = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await guest.RefreshUsageAsync(timeout.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException) { }
+        finally { loadingGuestUsage = false; UpdateControls(); }
     }
 
     void NotifyModelChoices()
@@ -757,12 +782,18 @@ public sealed class MainPage : ContentPage
     public bool IsAccountConnected => auth.IsConnected;
     public bool IsAccountDisconnected => !auth.IsConnected;
     public string AccountName => auth.AccountLabel;
+    public bool GuestModeAvailable => guest.IsConfigured;
+    public bool AiSharingAllowed => Preferences.Default.Get(AiSharingPreference, false);
+    public string GuestStatus => guest.CurrentUsage is { } usage
+        ? $"Guest · {usage.Remaining} of {usage.DailyLimit} requests left"
+        : guest.IsConfigured ? "Guest mode" : "○ ChatGPT not connected";
+    public string GuestModelLabel => guest.CurrentUsage is { } usage ? $"Guest model · {usage.Model}" : "Standard guest model";
     public IReadOnlyList<TranslationModel> AvailableModels => availableModels;
     public bool CanSelectModel => auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && availableModels.Length > 0;
     public string ModelChoiceHint => !auth.IsConnected ? "Connect ChatGPT to choose a model."
         : loadingModels ? "Loading your account's models …"
         : availableModels.Length == 0 ? "Could not load models. Close Settings and reopen to retry."
-        : "Applies to translations and AI replies.";
+        : "Uses your ChatGPT plan for translations and AI replies.";
     public TranslationModel? SelectedModel
     {
         get => availableModels.FirstOrDefault(model => model.Id == selectedModelId);
@@ -801,6 +832,31 @@ public sealed class MainPage : ContentPage
         Preferences.Default.Set("koe.show-transliteration", value);
         OnPropertyChanged(nameof(ShowTransliteration));
         ScrollToLatest();
+    }
+
+    public void SetAiSharing(bool allowed)
+    {
+        Preferences.Default.Set(AiSharingPreference, allowed);
+        if (!allowed && playback.UsesOpenAi)
+        {
+            ++playbackRevision;
+            playback.Stop();
+        }
+    }
+
+    async Task<bool> EnsureAiSharingAsync(string accept, CancellationToken ct = default)
+    {
+        if (AiSharingAllowed) return true;
+        if (promptingForAiSharing) return false;
+        promptingForAiSharing = true;
+        try
+        {
+            if (!await DisplayAlertAsync("Share with OpenAI", AiSharingExplanation, accept, "Not now")) return false;
+            ct.ThrowIfCancellationRequested();
+            SetAiSharing(true);
+            return true;
+        }
+        finally { promptingForAiSharing = false; }
     }
 
     async Task<ConversationLanguage?> PickLanguageAsync(string title, ConversationLanguage[] choices)
@@ -872,8 +928,8 @@ public sealed class MainPage : ContentPage
 
     public async Task ConnectAsync()
     {
-        if (busy || recording.HasTurn) return;
-        signInExplanation.Text = SignInExplanation;
+        if (loadingAccount || busy || recording.HasTurn) return;
+        signInError = null;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
         try
         {
@@ -881,11 +937,11 @@ public sealed class MainPage : ContentPage
             else { await auth.SignInAsync(operation.Token); SetStatus(null); }
         }
         catch (OperationCanceledException) { SetStatus("Sign-in cancelled."); }
-        catch (Exception ex) { signInExplanation.Text = ex.Message; SetStatus(ex.Message); }
+        catch (Exception ex) { signInError = ex.Message; SetStatus(ex.Message); }
         finally { FinishOperation(); await RefreshModelsAsync(); }
     }
 
-    async Task ShowSignInRequiredAsync()
+    async Task ShowSignInRequiredAsync(string explanation = SignInExplanation)
     {
         if (busy || promptingForSignIn || leavingConversation) return;
         promptingForSignIn = true;
@@ -893,8 +949,8 @@ public sealed class MainPage : ContentPage
         UpdateControls();
         try
         {
-            SetStatus("Connect ChatGPT before recording or sending a message. Your draft has been kept.");
-            if (await DisplayAlertAsync("Connect ChatGPT", "Recording, translation and AI replies require a ChatGPT connection. Your draft will be kept. Connect first, then tap the microphone or send button again.", "Connect ChatGPT", "Not now") && !auth.IsConnected)
+            SetStatus(explanation);
+            if (await DisplayAlertAsync("Connect ChatGPT", explanation + " Your draft will be kept. Tap the microphone or send button again after connecting.", "Continue with ChatGPT", "Not now") && !auth.IsConnected)
             {
                 promptingForSignIn = false;
                 await ConnectAsync();
@@ -905,8 +961,8 @@ public sealed class MainPage : ContentPage
 
     async Task TogglePauseAsync()
     {
-        if (busy || promptingForSignIn || leavingConversation) return;
-        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
+        if (loadingAccount || busy || promptingForSignIn || leavingConversation) return;
+        if (!CanUseAi) { await ShowSignInRequiredAsync(); return; }
         ShowConversationArea();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
@@ -943,18 +999,20 @@ public sealed class MainPage : ContentPage
 
     async Task SendTextAsync()
     {
-        if (busy || promptingForSignIn || leavingConversation) return;
-        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
+        if (loadingAccount || busy || promptingForSignIn || leavingConversation) return;
+        if (!CanUseAi) { await ShowSignInRequiredAsync(); return; }
         if (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null) return;
         draft.Unfocus();
         ++playbackRevision; playback.Stop();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
+        string? guestLimitMessage = null;
         try
         {
             var text = (await recording.FinishAsync(operation.Token)).Trim();
             recognizingSpeech = false; UpdateControls();
             if (string.IsNullOrWhiteSpace(text) && pendingImage is null) { SetStatus("No speech detected. Tap the microphone to try again."); return; }
+            if (!await EnsureAiSharingAsync("Allow and send", operation.Token)) return;
             if (mode.IsAi)
             {
                 await AskAiDraftAsync(text, operation.Token);
@@ -967,9 +1025,12 @@ public sealed class MainPage : ContentPage
             }
             await FlushConversationAsync();
         }
+        catch (GuestLimitException ex) { guestLimitMessage = ex.Message; SetStatus(ex.Message); }
         catch (OperationCanceledException) { recording.Suspend(); SetStatus(mode.IsAi ? "AI request cancelled. Your draft has been kept." : "Translation cancelled. Your draft has been kept."); }
         catch (Exception ex) { recording.Suspend(); SetStatus(ex.Message); }
         finally { FinishOperation(); }
+        if (guestLimitMessage is not null && pageVisible)
+            await ShowSignInRequiredAsync(guestLimitMessage);
     }
 
     async Task TranslateDraftAsync(string text, CancellationToken ct)
@@ -1101,12 +1162,16 @@ public sealed class MainPage : ContentPage
         OnPropertyChanged(nameof(IsAccountDisconnected));
         OnPropertyChanged(nameof(AccountName));
         OnPropertyChanged(nameof(CanSelectModel));
-        signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy && !promptingForSignIn;
+        OnPropertyChanged(nameof(GuestStatus));
+        signInCard.IsVisible = !loadingAccount && !auth.IsConnected && (!guest.IsConfigured || guest.LimitReached || signInError is not null);
+        signInTitle.Text = signInError is not null ? "ChatGPT sign-in" : guest.IsConfigured ? "Guest limit reached" : "ChatGPT sign-in required";
+        signInExplanation.Text = signInError ?? (guest.IsConfigured ? GuestLimitExplanation : SignInExplanation);
+        connect.IsEnabled = !busy && !promptingForSignIn && !recording.HasTurn;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
-        send.IsEnabled = !busy && !promptingForSignIn && (!auth.IsConnected || recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
+        send.IsEnabled = !loadingAccount && !busy && !promptingForSignIn && (!CanUseAi || recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
         attach.IsEnabled = !busy;
         removeAttachment.IsEnabled = !busy;
-        shutter.IsEnabled = !busy && !promptingForSignIn;
+        shutter.IsEnabled = !loadingAccount && !busy && !promptingForSignIn;
         shutter.Text = busy ? "" : recording.IsRecording ? "Ⅱ" : recording.HasTurn ? "▶" : "";
         shutter.ImageSource = !busy && !recording.HasTurn ? ImageSource.FromFile("microphone.png") : null;
         var buttonColor = busy ? Color.FromArgb("#7E96AB") : recording.IsRecording ? Color.FromArgb("#B63E46") : recording.HasTurn ? Color.FromArgb("#E8BD70") : Color.FromArgb("#CF4F55");
@@ -1125,13 +1190,13 @@ public sealed class MainPage : ContentPage
             else if (recording.IsRecording) hint.Text = "Live text · language is checked automatically.";
             else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
         }
-        if (!auth.IsConnected && !busy)
+        if (!CanUseAi && !busy)
         {
             prompt.Text = "Connect ChatGPT to begin";
             hint.Text = "Tap the microphone or send button to sign in.";
             SemanticProperties.SetDescription(shutter, "Connect ChatGPT to enable recording");
         }
-        SemanticProperties.SetDescription(send, !auth.IsConnected ? "Connect ChatGPT to send messages" : mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
+        SemanticProperties.SetDescription(send, !CanUseAi ? "Connect ChatGPT to send messages" : mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
         var speakerGreen = Color.FromArgb("#D1EEDC");
         var speakerInk = Color.FromArgb("#205C3B");
         firstSpeaker.BackgroundColor = !mode.IsAi && mode.FromFirst ? speakerGreen : Colors.Transparent;
