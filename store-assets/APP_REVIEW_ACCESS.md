@@ -57,9 +57,10 @@ The Windows build and iOS reference-API compilation do not replace these checks.
 1. Fresh install, disconnected: the sign-in card and composer explain the requirement.
    Both microphone and send taps open the sign-in dialog. "Not now" leaves text/photo
    drafts intact. Rapid repeated taps do not open multiple dialogs.
-2. After signing out, choose **Use another ChatGPT account** and verify that a
-   different eligible account can connect. Also test returning to the previous
-   registration, cancelling the account choice, and upgrading an older installation.
+2. After signing out, tap **Continue with ChatGPT** and verify that a
+   different eligible account can connect without an account picker or a preselected
+   previous account. Also test signing in again with the same account, cancelling
+   sign-in, and upgrading an older installation with a saved session.
    Complete sign-in through the supported route, or use the fully configured test
    access once it exists. Record a real successful connection; do not mark this
    complete based only on a displayed connected indicator.

@@ -18,50 +18,20 @@ async Task Reject(Func<Task> test)
 }
 Task<string> Read(string s, CancellationToken ct = default) => ResponseStream.ReadAsync(new StringReader(s), ct);
 await DemoChecks.RunAsync(Check);
-await Check("A different ChatGPT account starts its own registration after sign-out", () =>
+await AuthChecks.RunAsync(Check);
+await Check("ChatGPT sign-in starts fresh without previous-account hints", () =>
 {
-    var saved = new Registration("oaiapp_old", "old-user", "old@example.invalid");
-    var request = new ChatGptSignIn(saved, useDifferentAccount: true);
-    var fields = request.AuthorizationFields("old-id-token");
+    var fields = ChatGptSignIn.AuthorizationFields();
     if (fields.GetValueOrDefault("client_id") != "dynamic_agent_client" ||
         fields.GetValueOrDefault("agent_name_hint") != "Koe" ||
         fields.ContainsKey("id_token_hint") || fields.ContainsKey("login_hint")) throw new Exception("Previous account pinned the new sign-in.");
-    if (request.ResolveClientId(new() { ["client_id"] = "oaiapp_new" }) != "oaiapp_new") throw new Exception();
-    request.ValidateSubject("new-user");
+    if (ChatGptSignIn.ResolveClientId(new() { ["client_id"] = "oaiapp_new" }) != "oaiapp_new") throw new Exception();
     return Task.CompletedTask;
-});
-await Check("Returning ChatGPT sign-in reuses the account registration and hints", () =>
-{
-    var request = new ChatGptSignIn(new Registration("oaiapp_saved", "saved-user", "saved@example.invalid"), false);
-    var fields = request.AuthorizationFields("retained-id-token");
-    if (fields.GetValueOrDefault("client_id") != "oaiapp_saved" ||
-        fields.GetValueOrDefault("login_hint") != "saved@example.invalid" ||
-        fields.GetValueOrDefault("id_token_hint") != "retained-id-token" ||
-        fields.ContainsKey("agent_name_hint")) throw new Exception();
-    if (request.ResolveClientId(new()) != "oaiapp_saved") throw new Exception();
-    request.ValidateSubject("saved-user");
-    return Task.CompletedTask;
-});
-await Check("Legacy saved ChatGPT registrations remain usable and allow account switching", () =>
-{
-    var saved = JsonSerializer.Deserialize<Registration>("{\"ClientId\":\"legacy-client\",\"Subject\":\"legacy-user\"}")!;
-    var returning = new ChatGptSignIn(saved, false).AuthorizationFields(null);
-    var different = new ChatGptSignIn(saved, true).AuthorizationFields(null);
-    if (returning["client_id"] != "legacy-client" || returning.ContainsKey("login_hint") ||
-        different["client_id"] != "dynamic_agent_client") throw new Exception();
-    return Task.CompletedTask;
-});
-await Check("Returning sign-in rejects a different client or account identity", async () =>
-{
-    var request = new ChatGptSignIn(new Registration("oaiapp_saved", "saved-user"), false);
-    await Reject(() => { request.ResolveClientId(new() { ["client_id"] = "oaiapp_other" }); return Task.CompletedTask; });
-    await Reject(() => { request.ValidateSubject("other-user"); return Task.CompletedTask; });
 });
 await Check("A new ChatGPT sign-in requires an issued client ID", async () =>
 {
-    var request = new ChatGptSignIn(null, false);
-    foreach (var clientId in new[] { null, "", "dynamic_agent_client" })
-        await Reject(() => { request.ResolveClientId(clientId is null ? new() : new() { ["client_id"] = clientId }); return Task.CompletedTask; });
+    foreach (var clientId in new[] { null, "", " ", "dynamic_agent_client" })
+        await Reject(() => { ChatGptSignIn.ResolveClientId(clientId is null ? new() : new() { ["client_id"] = clientId }); return Task.CompletedTask; });
 });
 await Check("SSE combines Unicode deltas and waits for completion", async () =>
 {

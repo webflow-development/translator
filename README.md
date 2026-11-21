@@ -18,7 +18,7 @@ Validation covers restart recovery, Unicode, photos, drafts, independent chats/l
 
 ## Sign-in guidance and App Review access
 
-After signing out, Koe offers the previous ChatGPT account or **Use another ChatGPT account**. Returning to the previous account reuses its registration. Choosing another account starts its own registration with OpenAI. Existing saved registrations from older builds support this choice. OpenAI may still ask for an email verification code when a person signs in from a new device or location.
+**Continue with ChatGPT** starts sign-in directly, without a remembered-account picker. On iPhone, the private authentication window does not reuse Safari login cookies. Koe keeps only the active session in secure storage until sign-out; signing out clears that session and any account registration left by older builds. The next sign-in starts a fresh registration with OpenAI. OpenAI may still ask for an email verification code when a person signs in from a new device or location.
 
 ChatGPT authorization is required for recording, translation and AI replies. On a fresh installation, tapping the microphone or send button now opens an explicit sign-in-required dialog instead of leaving those controls disabled without feedback. The user can continue to the existing ChatGPT sign-in or dismiss the dialog; the draft and photo are retained. Signing in does not automatically record or send the draft. A visible sign-in card and composer hint explain the requirement, and sign-in failures are also shown in the card. Existing busy-operation and chat-switch guards remain in place.
 

@@ -3,6 +3,8 @@
   <ItemGroup>
     <Compile Include="../../Koe-Maui/Services/DemoConversation.cs" Link="DemoConversation.cs" />
     <Compile Include="../../Koe-Maui/Services/ChatGptSignIn.cs" Link="ChatGptSignIn.cs" />
+    <Compile Include="../../Koe-Maui/Services/ChatGptAuth.cs" Link="ChatGptAuth.cs" />
+    <Compile Include="../../Koe-Maui/Services/KoeJsonContext.cs" Link="KoeJsonContext.cs" />
     <Compile Include="../../Koe-Maui/Services/ConversationStore.cs" Link="ConversationStore.cs" />
     <Compile Include="../../Koe-Maui/Services/WebCitation.cs" Link="WebCitation.cs" />
     <Compile Include="../../Koe-Maui/Services/LiveSpeechPreview.cs" Link="LiveSpeechPreview.cs" />
