@@ -22,7 +22,11 @@ After signing out, Koe offers the previous ChatGPT account or **Use another Chat
 
 ChatGPT authorization is required for recording, translation and AI replies. On a fresh installation, tapping the microphone or send button now opens an explicit sign-in-required dialog instead of leaving those controls disabled without feedback. The user can continue to the existing ChatGPT sign-in or dismiss the dialog; the draft and photo are retained. Signing in does not automatically record or send the draft. A visible sign-in card and composer hint explain the requirement, and sign-in failures are also shown in the card. Existing busy-operation and chat-switch guards remain in place.
 
-This improves the disconnected experience; it does not provide App Review with an account or implement a demonstration mode. A reviewer being unable to sign in can explain the earlier inactive controls, but this has not been confirmed on the reviewed build or on the reviewer's iPad. App Review still needs a working, authorized test-access arrangement. See [the review access and device-test notes](store-assets/APP_REVIEW_ACCESS.md) before resubmitting.
+**Try demo** on the sign-in card and in Settings opens prepared English–Japanese examples. **Demo · sample responses** stays visible, and **Example** offers hotel phrases, a bundled menu image, an AI question and a follow-up. Tap send for the example's prepared result, or use the microphone to dictate the displayed phrase. The example prompt stays visible while recording. Editing, copying, transliteration, speaker switching, new chats, saved chats and swipe deletion use the normal controls. Unsupported input explains the available examples and keeps the draft.
+
+Demo chats and photos use a separate `demo-conversations` directory. Entry and exit flush the current session, and queued saves retain their own destination. **Exit** restores the previous normal chat or chat-list view and its display settings. Demo playback uses installed iPhone voices even when optional OpenAI voice is enabled for normal chats. The demo supplies prepared responses locally. Live translations, arbitrary AI answers, web search and OpenAI voice are available through the normal connected account and API setup.
+
+See [the review access and device-test notes](store-assets/APP_REVIEW_ACCESS.md) for exact demo steps and the remaining native-device checks before resubmitting.
 
 ## Automatic web search in AI mode
 

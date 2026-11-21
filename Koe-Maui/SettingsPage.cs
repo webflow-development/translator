@@ -134,41 +134,59 @@ public sealed class SettingsPage : ContentPage
     void Refresh()
     {
         body.Children.Clear();
-        Section("ChatGPT");
-        var connection = new VerticalStackLayout { Padding = new Thickness(16, 14), Spacing = 4 };
-        var connected = SettingsStyle.Label("● ChatGPT connected", 16);
-        connected.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#28774E"), Color.FromArgb("#7AD5A3"));
-        connected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
-        var disconnected = SettingsStyle.Label("○ ChatGPT not connected", 16, muted: true);
-        disconnected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountDisconnected), source: owner));
-        var accountName = SettingsStyle.Label("", 13, muted: true);
-        accountName.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.AccountName), source: owner));
-        accountName.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
-        connection.Children.Add(connected);
-        connection.Children.Add(disconnected);
-        connection.Children.Add(accountName);
-        var modelPicker = new Picker
+        if (owner.IsDemo)
         {
-            Title = "Choose a model", FontSize = 17, HeightRequest = 44, MinimumHeightRequest = 44,
-            BackgroundColor = Colors.Transparent, HorizontalOptions = LayoutOptions.Fill,
-            ItemDisplayBinding = new Binding(nameof(TranslationModel.Name))
-        };
-        modelPicker.SetAppThemeColor(Picker.TextColorProperty, Color.FromArgb("#19384E"), Color.FromArgb("#F5F5F7"));
-        modelPicker.SetAppThemeColor(Picker.TitleColorProperty, Color.FromArgb("#638295"), Color.FromArgb("#B2B2B7"));
-        modelPicker.SetBinding(Picker.ItemsSourceProperty, new Binding(nameof(MainPage.AvailableModels), source: owner));
-        modelPicker.SetBinding(Picker.SelectedItemProperty, new Binding(nameof(MainPage.SelectedModel), BindingMode.TwoWay, source: owner));
-        modelPicker.SetBinding(VisualElement.IsEnabledProperty, new Binding(nameof(MainPage.CanSelectModel), source: owner));
-        SemanticProperties.SetDescription(modelPicker, "ChatGPT model for translations and AI replies");
-        var modelRow = new VerticalStackLayout
+            Section("Demo");
+            body.Children.Add(SettingsStyle.Group(Action("↗", "Exit demo", async () =>
+            {
+                await Navigation.PopModalAsync();
+                await owner.ExitDemoAsync();
+            })));
+            Note("Prepared English–Japanese examples. Choose Example in the conversation for hotel phrases, a menu photo and AI questions.");
+        }
+        else
         {
-            Padding = new Thickness(16, 8), Spacing = 0,
-            Children = { SettingsStyle.Label("Model", 13, muted: true), modelPicker }
-        };
-        body.Children.Add(SettingsStyle.Group(connection, modelRow));
-        var modelHint = SettingsStyle.Label("", 13, muted: true);
-        modelHint.Margin = new Thickness(16, 0);
-        modelHint.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.ModelChoiceHint), source: owner));
-        body.Children.Add(modelHint);
+            Section("ChatGPT");
+            var connection = new VerticalStackLayout { Padding = new Thickness(16, 14), Spacing = 4 };
+            var connected = SettingsStyle.Label("● ChatGPT connected", 16);
+            connected.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#28774E"), Color.FromArgb("#7AD5A3"));
+            connected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
+            var disconnected = SettingsStyle.Label("○ ChatGPT not connected", 16, muted: true);
+            disconnected.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountDisconnected), source: owner));
+            var accountName = SettingsStyle.Label("", 13, muted: true);
+            accountName.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.AccountName), source: owner));
+            accountName.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(MainPage.IsAccountConnected), source: owner));
+            connection.Children.Add(connected);
+            connection.Children.Add(disconnected);
+            connection.Children.Add(accountName);
+            var modelPicker = new Picker
+            {
+                Title = "Choose a model", FontSize = 17, HeightRequest = 44, MinimumHeightRequest = 44,
+                BackgroundColor = Colors.Transparent, HorizontalOptions = LayoutOptions.Fill,
+                ItemDisplayBinding = new Binding(nameof(TranslationModel.Name))
+            };
+            modelPicker.SetAppThemeColor(Picker.TextColorProperty, Color.FromArgb("#19384E"), Color.FromArgb("#F5F5F7"));
+            modelPicker.SetAppThemeColor(Picker.TitleColorProperty, Color.FromArgb("#638295"), Color.FromArgb("#B2B2B7"));
+            modelPicker.SetBinding(Picker.ItemsSourceProperty, new Binding(nameof(MainPage.AvailableModels), source: owner));
+            modelPicker.SetBinding(Picker.SelectedItemProperty, new Binding(nameof(MainPage.SelectedModel), BindingMode.TwoWay, source: owner));
+            modelPicker.SetBinding(VisualElement.IsEnabledProperty, new Binding(nameof(MainPage.CanSelectModel), source: owner));
+            SemanticProperties.SetDescription(modelPicker, "ChatGPT model for translations and AI replies");
+            var modelRow = new VerticalStackLayout
+            {
+                Padding = new Thickness(16, 8), Spacing = 0,
+                Children = { SettingsStyle.Label("Model", 13, muted: true), modelPicker }
+            };
+            body.Children.Add(SettingsStyle.Group(connection, modelRow));
+            var modelHint = SettingsStyle.Label("", 13, muted: true);
+            modelHint.Margin = new Thickness(16, 0);
+            modelHint.SetBinding(Label.TextProperty, new Binding(nameof(MainPage.ModelChoiceHint), source: owner));
+            body.Children.Add(modelHint);
+            body.Children.Add(SettingsStyle.Group(Action("▷", "Try demo", async () =>
+            {
+                await Navigation.PopModalAsync();
+                await owner.StartDemoAsync();
+            }, "Explore prepared examples without signing in")));
+        }
 
         Section("Conversation languages");
         body.Children.Add(SettingsStyle.Group(
@@ -201,15 +219,19 @@ public sealed class SettingsPage : ContentPage
             Action("♪", "Speech voices", owner.ShowVoicesAsync)));
         Note("Transliteration adds a Latin-script reading for languages such as Japanese and Mandarin.");
 
-        Section("Account and billing");
-        body.Children.Add(SettingsStyle.Group(
-            Action("↗", "Manage usage", () => Browser.Default.OpenAsync("https://chatgpt.com/settings/usage")),
-            Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · API key and billing setup"),
-            Action("●", owner.IsAccountConnected ? "Sign out" : "Connect ChatGPT", async () =>
-            {
-                await Navigation.PopModalAsync();
-                await owner.ConnectAsync();
-            }, owner.IsAccountConnected ? owner.AccountName : "Connect to translate and ask AI")));
-        Note("Conversations and their photos are saved on this device. Swipe left on a chat in Chats to delete it.");
+        if (!owner.IsDemo)
+        {
+            Section("Account and billing");
+            body.Children.Add(SettingsStyle.Group(
+                Action("↗", "Manage usage", () => Browser.Default.OpenAsync("https://chatgpt.com/settings/usage")),
+                Action("AI", "OpenAI voice", owner.ShowOpenAiVoiceSettingsAsync, voiceSettings.Enabled ? "On · additional API charges" : "Off · API key and billing setup"),
+                Action("●", owner.IsAccountConnected ? "Sign out" : "Connect ChatGPT", async () =>
+                {
+                    await Navigation.PopModalAsync();
+                    await owner.ConnectAsync();
+                }, owner.IsAccountConnected ? owner.AccountName : "Connect to translate and ask AI")));
+        }
+        else Note("Demo playback uses iPhone voices. Live web search and OpenAI voice need a normal connection and are outside the prepared examples.");
+        Note(owner.IsDemo ? "Demo chats are saved separately on this device. Swipe left on a demo chat to delete it." : "Conversations and their photos are saved on this device. Swipe left on a chat in Chats to delete it.");
     }
 }

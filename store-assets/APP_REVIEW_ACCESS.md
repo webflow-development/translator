@@ -20,23 +20,33 @@ no working test credentials were supplied.
 
 ## Access arrangement to resolve before resubmitting
 
-Apple requires working access for the full feature set. The previous instruction
-to use the reviewer's own ChatGPT account has not satisfied this review.
+The replacement source includes a disclosed local demonstration mode. On a fresh
+installation, tap **Try demo** below **Continue with ChatGPT**. It is also available
+in Settings when an account is connected. Reviewers can use these steps without
+ChatGPT credentials.
 
-OpenAI may require an expiring email code on a new review device. Coordinate a
-workable review path with App Review. The account-switch correction in Koe lets a
-different account register separately, while OpenAI still controls login verification.
+1. Tap **Try demo**. The English–Japanese hotel phrase is loaded. Tap send to view
+   its prepared translation, or use the microphone to dictate the displayed phrase.
+2. Open **Example → Hotel conversation** for more phrases. Tap the other speaker
+   and choose a phrase to test the reverse direction.
+3. Open **Example → Menu photo** and send the bundled image. Copy the menu transcript
+   or its prepared English translation.
+4. Open **Example → Ask AI** and send. The prepared answer appears in both languages.
+   **AI follow-up** loads another prepared question. The active speaker determines
+   which language is loaded, and the answer follows that question's language.
+5. Test playback, text size, transliteration, back to chats, a new conversation,
+   reopening a saved demo chat and swipe deletion. **Exit** returns to normal chats.
 
-Apple describes a fully featured demonstration mode using demonstration data.
-Agree on how this would expose Koe's features, including translation, photos,
-bilingual AI, saved chats and speech playback. A mode that produces live model
-responses also needs an authorized processing service. Koe currently uses the
-connected user's ChatGPT plan for that processing.
+The persistent banner identifies sample responses. The demo handles the listed
+examples, uses the bundled menu, and explains unsupported input. Native microphone
+recognition, editing, chat storage and iPhone speech playback remain interactive.
+The normal account provides live translations, arbitrary AI requests and web search.
+Optional OpenAI voice uses a personal API key. Explain these boundaries to App Review
+and confirm an acceptable way to assess the full feature set.
 
 OpenAI's account-sharing policy reserves personal accounts for their individual
 owners. A working review arrangement should account for that policy and any email
-verification requirement. The current app still needs this arrangement before
-resubmission. See [Apple's review-access guidance](https://developer.apple.com/help/app-review/before-submitting-for-review/complete-review/)
+verification requirement. See [Apple's review-access guidance](https://developer.apple.com/help/app-review/before-submitting-for-review/complete-review/)
 and [OpenAI's account-sharing policy](https://help.openai.com/en/articles/10471989-openai-account-sharing-policy).
 
 ## Device verification before selecting the replacement build
@@ -63,6 +73,11 @@ The Windows build and iOS reference-API compilation do not replace these checks.
 6. Repeat on iPhone and on iPad in the app's actual compatibility layout, including
    rotation and opening the keyboard. Confirm taps reach the visible controls.
 7. Install as an update and verify saved chats and the existing sign-in state.
+8. Follow all demo steps above. Enter from an existing normal chat with a draft and
+   photo, then exit and verify both are restored. Change demo text size and
+   transliteration and verify the previous normal settings return. Repeat with
+   optional OpenAI voice enabled and confirm that demo playback uses iPhone voices.
+   Reopen the app, reenter the demo and check that its saved chats stay separate.
 
 ## Submission notes
 

@@ -26,7 +26,7 @@ sealed class ConversationTemplateSelector(DataTemplate translation, DataTemplate
         : translation;
 }
 
-public sealed class MainPage : ContentPage
+public sealed partial class MainPage : ContentPage
 {
     static readonly Color Ink = Color.FromArgb("#19384E"), Muted = Color.FromArgb("#638295"), Blue = Color.FromArgb("#568FBE");
     readonly ChatGptAuth auth;
@@ -34,8 +34,8 @@ public sealed class MainPage : ContentPage
     readonly SpeechDraft recording;
     readonly SpeechOutput playback;
     readonly OpenAiVoiceSettings voiceSettings;
-    readonly ConversationStore conversationStore;
-    readonly ConversationListView conversationList;
+    readonly ConversationStore normalConversationStore;
+    readonly ConversationListView normalConversationList;
     readonly VerticalStackLayout composer;
     readonly ImageButton chatBack = new() { Source = "back.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 11, BackgroundColor = Color.FromArgb("#E8F2F9") };
     readonly ImageButton newConversation = new() { Source = "compose.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 22, Padding = 10, BackgroundColor = Color.FromArgb("#E8F2F9") };
@@ -73,6 +73,7 @@ public sealed class MainPage : ContentPage
     ImageAttachment? pendingImage;
     bool pickingAttachment;
     readonly Button connect = new() { Text = "Continue with ChatGPT", BackgroundColor = Blue, TextColor = Colors.White, CornerRadius = 18, FontSize = 14 };
+    readonly Button tryDemo = new() { Text = "Try demo", BackgroundColor = Colors.White, TextColor = Ink, CornerRadius = 18, FontSize = 14 };
     const string SignInExplanation = "Sign in with ChatGPT to enable recording, translations and AI replies. No separate Koe account is needed.";
     readonly Label signInExplanation = new() { Text = SignInExplanation, TextColor = Muted, FontSize = 13 };
     bool promptingForSignIn;
@@ -103,7 +104,7 @@ public sealed class MainPage : ContentPage
     {
         if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
         this.auth = auth; this.translator = translator; this.playback = playback; this.voiceSettings = voiceSettings;
-        this.conversationStore = conversationStore; recording = new SpeechDraft(speech);
+        normalConversationStore = conversationStore; recording = new SpeechDraft(speech);
         NavigationPage.SetHasNavigationBar(this, false);
         Title = "Koe"; BackgroundColor = Color.FromArgb("#F0F6FA");
         // Resize the whole chat above the keyboard, including the composer and send button.
@@ -128,7 +129,7 @@ public sealed class MainPage : ContentPage
         signInCard = new Border
         {
             Margin = new Thickness(16, 10), Padding = 14, StrokeThickness = 0, BackgroundColor = Color.FromArgb("#E1EEF8"), StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "ChatGPT sign-in required", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, signInExplanation, connect } }
+            Content = new VerticalStackLayout { Spacing = 9, Children = { new Label { Text = "ChatGPT sign-in required", TextColor = Ink, FontSize = 17, FontAttributes = FontAttributes.Bold }, signInExplanation, connect, tryDemo } }
         };
         messages = new CollectionView
         {
@@ -141,8 +142,9 @@ public sealed class MainPage : ContentPage
             } },
             ItemTemplate = new ConversationTemplateSelector(new DataTemplate(() => CreateBubble(ConversationTurnKind.Translation)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiQuestion)), new DataTemplate(() => CreateBubble(ConversationTurnKind.AiAnswer)))
         };
-        conversationList = new ConversationListView(conversationStore, OpenConversationInlineAsync);
-        var conversationArea = new Grid { Children = { messages, conversationList } };
+        normalConversationList = new ConversationListView(conversationStore, OpenConversationInlineAsync);
+        demoConversationList = new ConversationListView(demoConversationStore, OpenConversationInlineAsync);
+        var conversationArea = new Grid { Children = { messages, normalConversationList, demoConversationList } };
         var languages = new Grid
         {
             ColumnSpacing = 6,
@@ -185,6 +187,8 @@ public sealed class MainPage : ContentPage
         };
         var root = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) } };
         root.Add(header, 0, 0); root.Add(signInCard, 0, 1); root.Add(conversationArea, 0, 2); root.Add(livePreview, 0, 3); root.Add(composer, 0, 4);
+        demoControls = CreateDemoControls();
+        root.Add(demoControls, 0, 1);
         root.SizeChanged += (_, _) => ScrollToLatest();
         Content = root;
         SemanticProperties.SetDescription(send, "Send message, translate and switch speakers");
@@ -193,6 +197,7 @@ public sealed class MainPage : ContentPage
         attach.Clicked += async (_, _) => await PickAttachmentAsync();
         removeAttachment.Clicked += (_, _) => { if (!busy) SetAttachment(null); };
         connect.Clicked += async (_, _) => await ConnectAsync();
+        tryDemo.Clicked += async (_, _) => await StartDemoAsync();
         shutter.Clicked += async (_, _) => await TogglePauseAsync();
         send.Clicked += async (_, _) => await SendTextAsync();
         SemanticProperties.SetDescription(cancel, "Stop and delete the current input and attached image");
@@ -261,18 +266,18 @@ public sealed class MainPage : ContentPage
         var snapshot = CaptureConversation(); // Capture before any await or a chat switch.
         conversationDirty = false;
         var previous = pendingSave;
-        pendingSave = SaveAfterAsync(previous, snapshot);
+        pendingSave = SaveAfterAsync(previous, snapshot, conversationStore);
         return pendingSave;
     }
 
-    async Task SaveAfterAsync(Task previous, ConversationSnapshot snapshot)
+    async Task SaveAfterAsync(Task previous, ConversationSnapshot snapshot, ConversationStore store)
     {
         try { await previous; }
         catch { /* Retry the latest complete snapshot after an earlier failed save. */ }
-        try { await conversationStore.SaveAsync(snapshot); }
+        try { await store.SaveAsync(snapshot); }
         catch (Exception ex)
         {
-            if (snapshot.Id == conversationId) conversationDirty = true;
+            if (ReferenceEquals(store, conversationStore) && snapshot.Id == conversationId) conversationDirty = true;
             throw new IOException("Could not save this conversation. Please check the available storage and try again.", ex);
         }
     }
@@ -319,10 +324,12 @@ public sealed class MainPage : ContentPage
         try
         {
             ++playbackRevision; playback.Stop(); recording.Clear();
+            demoPrefilledText = null;
+            demoInstruction.Text = "Choose Example to load a prepared phrase, photo or AI question.";
             conversationId = snapshot?.Id ?? Guid.NewGuid();
             conversationCreatedAt = snapshot?.CreatedAt ?? DateTimeOffset.UtcNow;
-            first = SavedLanguage(snapshot?.FirstLanguageCode ?? Preferences.Default.Get("koe.language.first", "en"));
-            second = SavedLanguage(snapshot?.SecondLanguageCode ?? Preferences.Default.Get("koe.language.second", "ja"));
+            first = SavedLanguage(snapshot?.FirstLanguageCode ?? (IsDemo ? "en" : Preferences.Default.Get("koe.language.first", "en")));
+            second = SavedLanguage(snapshot?.SecondLanguageCode ?? (IsDemo ? "ja" : Preferences.Default.Get("koe.language.second", "ja")));
             if (first.Code == second.Code) second = ConversationLanguage.All.First(x => x.Code != first.Code);
             turns.Clear();
             if (snapshot is not null)
@@ -588,36 +595,42 @@ public sealed class MainPage : ContentPage
         var revision = ++playbackRevision;
         try
         {
-            if (playback.UsesOpenAi) SetStatus("Preparing OpenAI voice … Tap the speaker again to stop.");
-            var started = await playback.SpeakAsync(text, language.Code, Preferences.Default.Get("koe.voice." + language.Code, ""));
+            if (!IsDemo && playback.UsesOpenAi) SetStatus("Preparing OpenAI voice … Tap the speaker again to stop.");
+            var started = await playback.SpeakAsync(text, language.Code, SelectedVoice(language.Code), useNativeVoice: IsDemo);
             if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording)
-                SetStatus(started && playback.UsesOpenAi ? "OpenAI voice (AI-generated) · tap the speaker to stop." : null);
+                SetStatus(IsDemo ? "Demo playback · iPhone voice" : started && playback.UsesOpenAi ? "OpenAI voice (AI-generated) · tap the speaker to stop." : null);
         }
         catch (Exception ex) { if (revision == playbackRevision && pageVisible && !busy && !recording.IsRecording) SetStatus(ex.Message); }
     }
 
     public async Task ShowVoicesAsync()
     {
-        if (voiceSettings.Enabled) { await ShowOpenAiVoiceSettingsAsync(); return; }
-        var language = await PickLanguageAsync("Voice language", ConversationLanguage.All);
+        if (!IsDemo && voiceSettings.Enabled) { await ShowOpenAiVoiceSettingsAsync(); return; }
+        var language = await PickLanguageAsync("Voice language", IsDemo ? [ConversationLanguage.Get("en"), ConversationLanguage.Get("ja")] : ConversationLanguage.All);
         if (language is null) return;
         var voices = playback.GetVoices(language.Code);
         if (voices.Count == 0)
         {
-            await DisplayAlertAsync("No iPhone voice available", "No iPhone voice is available for this language. You can enable OpenAI voice in Koe Settings instead.", "OK");
+            await DisplayAlertAsync("No iPhone voice available", IsDemo ? "No iPhone voice is available for this language on this device. Demo playback uses installed iPhone voices." : "No iPhone voice is available for this language. You can enable OpenAI voice in Koe Settings instead.", "OK");
             return;
         }
         var choices = voices.Select((voice, index) => $"{index + 1}. {voice.DisplayName}").ToArray();
         var selected = await DisplayActionSheetAsync($"{language.Name} · {voices.Count} voices", "Cancel", null, choices);
         var selection = Array.IndexOf(choices, selected);
         if (selection < 0) return;
-        Preferences.Default.Set("koe.voice." + language.Code, voices[selection].Id);
-        try { await playback.SpeakAsync(language.Greeting, language.Code, voices[selection].Id); }
+        if (IsDemo) demoVoices[language.Code] = voices[selection].Id;
+        else Preferences.Default.Set("koe.voice." + language.Code, voices[selection].Id);
+        try { await playback.SpeakAsync(language.Greeting, language.Code, voices[selection].Id, useNativeVoice: IsDemo); }
         catch (Exception ex) { SetStatus(ex.Message); }
     }
 
     public async Task ShowOpenAiVoiceSettingsAsync()
     {
+        if (IsDemo)
+        {
+            await DisplayAlertAsync("Demo speech", "Demo playback uses iPhone voices. OpenAI voice can be configured with a personal API key after leaving the demo.", "OK");
+            return;
+        }
         ++playbackRevision;
         playback.Stop();
         await (settingsNavigation ?? Navigation).PushModalAsync(new OpenAiVoicePage(voiceSettings));
@@ -656,7 +669,7 @@ public sealed class MainPage : ContentPage
 
     public async Task RefreshModelsAsync()
     {
-        if (!auth.IsConnected)
+        if (IsDemo || !auth.IsConnected)
         {
             availableModels = [];
             NotifyModelChoices();
@@ -670,17 +683,17 @@ public sealed class MainPage : ContentPage
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             var available = await translator.GetModelsAsync(timeout.Token);
-            if (!auth.IsConnected || auth.ConnectionKey != connection) return;
+            if (IsDemo || !auth.IsConnected || auth.ConnectionKey != connection) return;
             var selected = available.FirstOrDefault(x => x.Id == selectedModelId) ?? available[0];
             availableModels = available;
             selectedModelId = selected.Id;
             Preferences.Default.Set("koe.model", selectedModelId);
         }
-        catch (Exception) { if (!busy && auth.IsConnected && pageVisible) SetStatus("Could not load model choices. Reconnect to refresh the list."); }
+        catch (Exception) { if (!IsDemo && !busy && auth.IsConnected && pageVisible) SetStatus("Could not load model choices. Reconnect to refresh the list."); }
         finally
         {
             loadingModels = false; UpdateControls(); NotifyModelChoices();
-            if (auth.IsConnected && auth.ConnectionKey != connection) await RefreshModelsAsync();
+            if (!IsDemo && auth.IsConnected && auth.ConnectionKey != connection) await RefreshModelsAsync();
         }
     }
 
@@ -708,6 +721,7 @@ public sealed class MainPage : ContentPage
 
     async Task PickAttachmentAsync()
     {
+        if (IsDemo) { await ChooseDemoExampleAsync("Menu photo"); return; }
         if (busy) return;
         draft.Unfocus();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
@@ -754,11 +768,11 @@ public sealed class MainPage : ContentPage
     public string FirstLanguageName => first.Name;
     public string SecondLanguageName => second.Name;
     public string CurrentTextSize => TextSizeLabel;
-    public bool IsAccountConnected => auth.IsConnected;
-    public bool IsAccountDisconnected => !auth.IsConnected;
+    public bool IsAccountConnected => !IsDemo && auth.IsConnected;
+    public bool IsAccountDisconnected => !IsAccountConnected;
     public string AccountName => auth.AccountLabel;
     public IReadOnlyList<TranslationModel> AvailableModels => availableModels;
-    public bool CanSelectModel => auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && availableModels.Length > 0;
+    public bool CanSelectModel => !IsDemo && auth.IsConnected && !busy && !recording.HasTurn && !loadingModels && availableModels.Length > 0;
     public string ModelChoiceHint => !auth.IsConnected ? "Connect ChatGPT to choose a model."
         : loadingModels ? "Loading your account's models …"
         : availableModels.Length == 0 ? "Could not load models. Close Settings and reopen to retry."
@@ -783,6 +797,11 @@ public sealed class MainPage : ContentPage
 
     public async Task ChangeLanguageAsync(bool changeFirst)
     {
+        if (IsDemo)
+        {
+            await DisplayAlertAsync("Demo languages", "The prepared examples use English and Japanese. Tap either speaker to change direction.", "OK");
+            return;
+        }
         var other = changeFirst ? second : first;
         var selected = await PickLanguageAsync(changeFirst ? "First speaker's language" : "Second speaker's language",
             ConversationLanguage.All.Where(x => x.Code != other.Code).ToArray());
@@ -798,7 +817,7 @@ public sealed class MainPage : ContentPage
     public void SetTransliteration(bool value)
     {
         showTransliteration = value;
-        Preferences.Default.Set("koe.show-transliteration", value);
+        if (!IsDemo) Preferences.Default.Set("koe.show-transliteration", value);
         OnPropertyChanged(nameof(ShowTransliteration));
         ScrollToLatest();
     }
@@ -861,7 +880,7 @@ public sealed class MainPage : ContentPage
     {
         if (selection is not ("Small" or "Medium" or "Large")) return;
         textSize = selection == "Small" ? "Klein" : selection == "Large" ? "Groß" : "Mittel";
-        Preferences.Default.Set("koe.text-size", textSize);
+        if (!IsDemo) Preferences.Default.Set("koe.text-size", textSize);
         OnPropertyChanged(nameof(MessageFontSize));
         OnPropertyChanged(nameof(OriginalFontSize));
         OnPropertyChanged(nameof(ReadingFontSize));
@@ -872,6 +891,7 @@ public sealed class MainPage : ContentPage
 
     public async Task ConnectAsync()
     {
+        if (IsDemo) { await ExitDemoAsync(); return; }
         if (busy || recording.HasTurn) return;
         signInExplanation.Text = SignInExplanation;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
@@ -920,7 +940,7 @@ public sealed class MainPage : ContentPage
     async Task TogglePauseAsync()
     {
         if (busy || promptingForSignIn || leavingConversation) return;
-        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
+        if (!IsDemo && !auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
         ShowConversationArea();
         recognizingSpeech = mode.IsAi && recording.IsRecording;
         discardingInput = false; busy = true; operation = new CancellationTokenSource(); UpdateControls();
@@ -936,6 +956,8 @@ public sealed class MainPage : ContentPage
                 draft.Unfocus();
                 ++playbackRevision;
                 playback.Stop();
+                if (IsDemo && !recording.HasTurn && !string.IsNullOrEmpty(demoPrefilledText) && recording.Text == demoPrefilledText)
+                    recording.Edit("");
                 await recording.StartAsync(CultureInfo.GetCultureInfo(SourceLanguage.Culture), operation.Token,
                     mode.IsAi ? [CultureInfo.GetCultureInfo(first.Culture), CultureInfo.GetCultureInfo(second.Culture)] : null);
                 SetStatus(null);
@@ -958,7 +980,7 @@ public sealed class MainPage : ContentPage
     async Task SendTextAsync()
     {
         if (busy || promptingForSignIn || leavingConversation) return;
-        if (!auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
+        if (!IsDemo && !auth.IsConnected) { await ShowSignInRequiredAsync(); return; }
         if (!recording.HasTurn && string.IsNullOrWhiteSpace(recording.Text) && pendingImage is null) return;
         draft.Unfocus();
         ++playbackRevision; playback.Stop();
@@ -972,12 +994,12 @@ public sealed class MainPage : ContentPage
             if (mode.IsAi)
             {
                 await AskAiDraftAsync(text, operation.Token);
-                SetStatus("AI replied in both languages. Ask a follow-up or select a speaker to translate.");
+                SetStatus(IsDemo ? "Prepared AI reply · choose another demo question or select a speaker." : "AI replied in both languages. Ask a follow-up or select a speaker to translate.");
             }
             else
             {
                 await TranslateDraftAsync(text, operation.Token);
-                SetStatus("Translated. The next speaker can start recording.");
+                SetStatus(IsDemo ? "Prepared translation · choose an example for the next speaker." : "Translated. The next speaker can start recording.");
             }
             await FlushConversationAsync();
         }
@@ -991,8 +1013,10 @@ public sealed class MainPage : ContentPage
         SetStatus("Translating …");
         var direction = mode.FromFirst;
         var image = pendingImage;
-        var translated = await WithPreviewAsync(ct, "Translating · preview", preview =>
-            translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, preview, showTransliteration, selectedModelId));
+        var translated = IsDemo
+            ? DemoConversation.Translate(text, SourceLanguage, TargetLanguage, showTransliteration, await IsDemoMenuAsync(image))
+            : await WithPreviewAsync(ct, "Translating · preview", preview =>
+                translator.TranslateAsync(text, SourceLanguage, TargetLanguage, ct, image, preview, showTransliteration, selectedModelId));
         ct.ThrowIfCancellationRequested();
         if (image is not null)
         {
@@ -1050,7 +1074,10 @@ public sealed class MainPage : ContentPage
     {
         SetStatus("AI is answering …");
         var image = pendingImage;
-        var reply = await WithPreviewAsync(ct, "AI · automatic language detection", preview =>
+        if (IsDemo && image is not null)
+            throw new InvalidOperationException("For the demo menu, select a speaker and send the image. AI demo questions are available under Example.");
+        var reply = IsDemo ? DemoConversation.Ask(text, first, second, showTransliteration)
+            : await WithPreviewAsync(ct, "AI · automatic language detection", preview =>
             translator.AskAsync(text, first, second, AiContext(), ct, image, preview, showTransliteration, selectedModelId,
                 () => MainThread.BeginInvokeOnMainThread(() =>
                 {
@@ -1098,7 +1125,8 @@ public sealed class MainPage : ContentPage
     void UpdateControls()
     {
         messages.IsVisible = !showingConversations;
-        conversationList.IsVisible = showingConversations;
+        normalConversationList.IsVisible = !IsDemo && showingConversations;
+        demoConversationList.IsVisible = IsDemo && showingConversations;
         conversationList.IsEnabled = !busy && !leavingConversation;
         chatBack.IsVisible = !showingConversations;
         newConversation.IsVisible = showingConversations;
@@ -1115,9 +1143,11 @@ public sealed class MainPage : ContentPage
         OnPropertyChanged(nameof(IsAccountDisconnected));
         OnPropertyChanged(nameof(AccountName));
         OnPropertyChanged(nameof(CanSelectModel));
-        signInCard.IsVisible = !auth.IsConnected; connect.IsEnabled = !busy && !promptingForSignIn;
+        signInCard.IsVisible = !IsDemo && !auth.IsConnected; connect.IsEnabled = !busy && !promptingForSignIn;
+        demoControls.IsVisible = IsDemo;
+        demoExample.IsEnabled = demoExit.IsEnabled = tryDemo.IsEnabled = !busy && !leavingConversation && !promptingForSignIn;
         draft.IsReadOnly = busy && (!pausingForEdit || discardingInput);
-        send.IsEnabled = !busy && !promptingForSignIn && (!auth.IsConnected || recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
+        send.IsEnabled = !busy && !promptingForSignIn && ((!IsDemo && !auth.IsConnected) || recording.HasTurn || !string.IsNullOrWhiteSpace(draft.Text) || pendingImage is not null);
         attach.IsEnabled = !busy;
         removeAttachment.IsEnabled = !busy;
         shutter.IsEnabled = !busy && !promptingForSignIn;
@@ -1139,13 +1169,18 @@ public sealed class MainPage : ContentPage
             else if (recording.IsRecording) hint.Text = "Live text · language is checked automatically.";
             else if (!recording.HasTurn) hint.Text = "Microphone: record · ↑: ask AI";
         }
-        if (!auth.IsConnected && !busy)
+        if (!IsDemo && !auth.IsConnected && !busy)
         {
             prompt.Text = "Connect ChatGPT to begin";
             hint.Text = "Tap the microphone or send button to sign in.";
             SemanticProperties.SetDescription(shutter, "Connect ChatGPT to enable recording");
         }
-        SemanticProperties.SetDescription(send, !auth.IsConnected ? "Connect ChatGPT to send messages" : mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
+        SemanticProperties.SetDescription(send, !IsDemo && !auth.IsConnected ? "Connect ChatGPT to send messages" : mode.IsAi ? "Ask AI and receive an answer in both languages" : "Send message, translate and switch speakers");
+        if (IsDemo)
+        {
+            attachmentHint.Text = "Demo menu · prepared translation";
+            if (!busy && !recording.HasTurn) hint.Text = "Record an example or tap ↑ for its prepared response.";
+        }
         var speakerGreen = Color.FromArgb("#D1EEDC");
         var speakerInk = Color.FromArgb("#205C3B");
         firstSpeaker.BackgroundColor = !mode.IsAi && mode.FromFirst ? speakerGreen : Colors.Transparent;

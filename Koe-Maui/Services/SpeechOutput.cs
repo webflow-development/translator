@@ -7,9 +7,14 @@ public sealed class SpeechOutput(ISpeechPlayback native, IAudioPlayback audio, O
     public bool UsesOpenAi => settings.Enabled;
     public IReadOnlyList<PlaybackVoice> GetVoices(string code) => native.GetVoices(code);
 
-    public async Task<bool> SpeakAsync(string text, string code, string? nativeVoice)
+    public async Task<bool> SpeakAsync(string text, string code, string? nativeVoice, bool useNativeVoice = false)
     {
-        if (!settings.Enabled) { native.Speak(text, code, nativeVoice); return true; }
+        if (useNativeVoice || !settings.Enabled)
+        {
+            if (useNativeVoice) Stop();
+            native.Speak(text, code, nativeVoice);
+            return true;
+        }
         var stopOnly = lastText == text && lastLanguage == code && (pending is not null || audio.IsPlaying);
         Stop();
         if (stopOnly || string.IsNullOrWhiteSpace(text)) return false;

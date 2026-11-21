@@ -17,6 +17,7 @@ async Task Reject(Func<Task> test)
     throw new Exception("Expected rejection.");
 }
 Task<string> Read(string s, CancellationToken ct = default) => ResponseStream.ReadAsync(new StringReader(s), ct);
+await DemoChecks.RunAsync(Check);
 await Check("A different ChatGPT account starts its own registration after sign-out", () =>
 {
     var saved = new Registration("oaiapp_old", "old-user", "old@example.invalid");
