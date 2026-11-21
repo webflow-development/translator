@@ -878,7 +878,21 @@ public sealed class MainPage : ContentPage
         try
         {
             if (auth.IsConnected) { await auth.SignOutAsync(operation.Token); translator.ClearModels(); SetStatus("Signed out."); }
-            else { await auth.SignInAsync(operation.Token); SetStatus(null); }
+            else
+            {
+                var previousAccount = await auth.SavedAccountLabelAsync();
+                var useDifferentAccount = false;
+                if (previousAccount is not null)
+                {
+                    var returning = "Continue with " + previousAccount;
+                    const string different = "Use another ChatGPT account";
+                    var choice = await DisplayActionSheetAsync("ChatGPT account", "Cancel", null, returning, different);
+                    if (choice != returning && choice != different) { SetStatus("Sign-in cancelled."); return; }
+                    useDifferentAccount = choice == different;
+                }
+                await auth.SignInAsync(operation.Token, useDifferentAccount);
+                SetStatus(null);
+            }
         }
         catch (OperationCanceledException) { SetStatus("Sign-in cancelled."); }
         catch (Exception ex) { signInExplanation.Text = ex.Message; SetStatus(ex.Message); }

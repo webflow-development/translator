@@ -8,7 +8,6 @@ namespace Koe.Services;
 
 public sealed record Credential(string ClientId, string AccessToken, string RefreshToken, string IdToken,
     string Subject, string? Email, string[] Scopes, DateTimeOffset ExpiresAt);
-internal sealed record Registration(string ClientId, string Subject);
 
 public sealed class ChatGptAuth(HttpClient http)
 {
@@ -29,17 +28,28 @@ public sealed class ChatGptAuth(HttpClient http)
         loaded = true;
     }
 
-    public async Task SignInAsync(CancellationToken cancellationToken)
+    public async Task<string?> SavedAccountLabelAsync()
+    {
+        await LoadAsync();
+        var registration = await ReadRegistrationAsync();
+        return registration is null ? null : registration.Email ?? "Previous ChatGPT account";
+    }
+
+    async Task<Registration?> ReadRegistrationAsync()
+    {
+        if (current is not null) return new Registration(current.ClientId, current.Subject, current.Email);
+        var saved = await SecureStorage.Default.GetAsync(RegistrationKey);
+        return saved is null ? null : JsonSerializer.Deserialize(saved, KoeJsonContext.Default.Registration);
+    }
+
+    public async Task SignInAsync(CancellationToken cancellationToken, bool useDifferentAccount = false)
     {
         await LoadAsync();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(5));
         var ct = timeout.Token;
-        var previous = current;
-        var registration = previous is null ? await SecureStorage.Default.GetAsync(RegistrationKey) : null;
-        var known = registration is null ? null : JsonSerializer.Deserialize(registration, KoeJsonContext.Default.Registration);
-        var oldClientId = previous?.ClientId ?? known?.ClientId;
-        var oldSubject = previous?.Subject ?? known?.Subject;
+        var previous = useDifferentAccount ? null : current;
+        var signIn = new ChatGptSignIn(await ReadRegistrationAsync(), useDifferentAccount);
         var hostId = Preferences.Default.Get("koe.host-id", "");
         if (hostId.Length == 0)
         {
@@ -50,14 +60,13 @@ public sealed class ChatGptAuth(HttpClient http)
         using var listener = new LoopbackCallback(state);
         var query = new Dictionary<string, string>
         {
-            ["client_id"] = oldClientId ?? "dynamic_agent_client", ["ext_agent_host_id"] = hostId,
+            ["ext_agent_host_id"] = hostId,
             ["response_type"] = "code", ["redirect_uri"] = listener.RedirectUri,
             ["scope"] = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
             ["resource"] = Resource, ["state"] = state, ["nonce"] = nonce,
             ["code_challenge_method"] = "S256", ["code_challenge"] = Base64Url(SHA256.HashData(Encoding.UTF8.GetBytes(verifier)))
         };
-        if (oldClientId is null) query["agent_name_hint"] = "Koe";
-        if (previous is not null) query["id_token_hint"] = previous.IdToken;
+        foreach (var field in signIn.AuthorizationFields(previous?.IdToken)) query.Add(field.Key, field.Value);
         var uri = new Uri("https://auth.openai.com/api/accounts/authorize?" + Encode(query));
         var callbackTask = listener.WaitAsync(ct);
         Dictionary<string, string> callback;
@@ -86,18 +95,17 @@ public sealed class ChatGptAuth(HttpClient http)
         finally { listener.Dispose(); }
         if (callback.GetValueOrDefault("state") != state) throw new InvalidOperationException("Could not securely validate the sign-in response.");
         if (callback.ContainsKey("error")) throw new InvalidOperationException("Die Anmeldung wurde abgelehnt oder abgebrochen.");
-        var clientId = callback.GetValueOrDefault("client_id") ?? oldClientId;
+        var clientId = signIn.ResolveClientId(callback);
         var code = callback.GetValueOrDefault("code");
-        if (string.IsNullOrEmpty(clientId) || clientId == "dynamic_agent_client" || string.IsNullOrEmpty(code))
+        if (string.IsNullOrEmpty(code))
             throw new InvalidOperationException("OpenAI returned an incomplete registration.");
-        if (oldClientId is not null && oldClientId != clientId) throw new InvalidOperationException("The sign-in belongs to a different registration.");
         var tokens = await PostTokensAsync(new()
         {
             ["grant_type"] = "authorization_code", ["client_id"] = clientId, ["code"] = code,
             ["code_verifier"] = verifier, ["redirect_uri"] = listener.RedirectUri, ["resource"] = Resource
         }, ct);
         var identity = await IdTokenValidator.ValidateAsync(http, tokens.IdToken, clientId, nonce, ct);
-        if (oldSubject is not null && identity.Subject != oldSubject) throw new InvalidOperationException("The sign-in belongs to a different account.");
+        signIn.ValidateSubject(identity.Subject);
         await SaveAsync(ToCredential(clientId, tokens, identity, previous));
     }
 
@@ -147,7 +155,7 @@ public sealed class ChatGptAuth(HttpClient http)
     async Task SaveAsync(Credential credential)
     {
         if (!credential.Scopes.Contains("chatgpt.tokens.use.direct")) throw new InvalidOperationException("Permission to use the ChatGPT plan is missing.");
-        await SecureStorage.Default.SetAsync(RegistrationKey, JsonSerializer.Serialize(new Registration(credential.ClientId, credential.Subject), KoeJsonContext.Default.Registration));
+        await SecureStorage.Default.SetAsync(RegistrationKey, JsonSerializer.Serialize(new Registration(credential.ClientId, credential.Subject, credential.Email), KoeJsonContext.Default.Registration));
         await SecureStorage.Default.SetAsync(StorageKey, JsonSerializer.Serialize(credential, KoeJsonContext.Default.Credential));
         current = credential;
     }

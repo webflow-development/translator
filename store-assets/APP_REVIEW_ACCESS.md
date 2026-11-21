@@ -17,26 +17,27 @@ no working test credentials were supplied.
   not meet Apple's request for review access and is not a completed review fix.
 - The app currently declares iPhone device family 1. iPhone compatibility on iPad
   still needs testing; the declaration is not a reason to dismiss Apple's iPad finding.
-- No new test credentials, shared API key, demo service or paid backend has been created.
-  No message has been sent to Apple.
 
 ## Access arrangement to resolve before resubmitting
 
 Apple requires working access for the full feature set. The previous instruction
 to use the reviewer's own ChatGPT account has not satisfied this review.
 
-A possible next implementation is a disclosed, fully functional demonstration
-mode with dedicated test access to a secured API-backed service. The service would
-keep its provider credentials on the server; no developer API key would be bundled
-in the app. It must support actual test input, translation, photos, bilingual AI,
-web search where supported, chat persistence and the relevant speech-output paths.
-Fixed canned replies or a demonstration video would not establish those behaviors.
+OpenAI may require an expiring email code on a new review device. Coordinate a
+workable review path with App Review. The account-switch correction in Koe lets a
+different account register separately, while OpenAI still controls login verification.
 
-That is a separate integration requiring the owner's decision on API costs,
-hosting, credentials and access limits. It is a proposal, not a feature of the
-current build. Any review-access differences must be explained to Apple. If a
-different account arrangement is chosen, confirm with App Review that it provides
-the required access; do not assume a shared personal ChatGPT account is suitable.
+Apple describes a fully featured demonstration mode using demonstration data.
+Agree on how this would expose Koe's features, including translation, photos,
+bilingual AI, saved chats and speech playback. A mode that produces live model
+responses also needs an authorized processing service. Koe currently uses the
+connected user's ChatGPT plan for that processing.
+
+OpenAI's account-sharing policy reserves personal accounts for their individual
+owners. A working review arrangement should account for that policy and any email
+verification requirement. The current app still needs this arrangement before
+resubmission. See [Apple's review-access guidance](https://developer.apple.com/help/app-review/before-submitting-for-review/complete-review/)
+and [OpenAI's account-sharing policy](https://help.openai.com/en/articles/10471989-openai-account-sharing-policy).
 
 ## Device verification before selecting the replacement build
 
@@ -46,7 +47,10 @@ The Windows build and iOS reference-API compilation do not replace these checks.
 1. Fresh install, disconnected: the sign-in card and composer explain the requirement.
    Both microphone and send taps open the sign-in dialog. "Not now" leaves text/photo
    drafts intact. Rapid repeated taps do not open multiple dialogs.
-2. Complete sign-in through the supported route, or use the fully configured test
+2. After signing out, choose **Use another ChatGPT account** and verify that a
+   different eligible account can connect. Also test returning to the previous
+   registration, cancelling the account choice, and upgrading an older installation.
+   Complete sign-in through the supported route, or use the fully configured test
    access once it exists. Record a real successful connection; do not mark this
    complete based only on a displayed connected indicator.
 3. With access: request microphone/speech permissions, record, pause, resume and send.
